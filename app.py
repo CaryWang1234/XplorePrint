@@ -135,6 +135,15 @@ def upload_to_printer(printer_id):
     return jsonify(result)
 
 
+@app.route("/api/printers/<printer_id>/print", methods=["POST"])
+def start_print(printer_id):
+    data = request.json
+    filename = data.get("filename", "")
+    if not filename:
+        return jsonify({"success": False, "message": "未指定文件名"}), 400
+    return jsonify(manager.start_print(printer_id, filename))
+
+
 @app.route("/api/printers/<printer_id>/camera", methods=["GET"])
 def get_camera_url(printer_id):
     url = manager.get_camera_url(printer_id)

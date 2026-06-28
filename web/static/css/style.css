@@ -107,6 +107,27 @@ body {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.15);
 }
 
 .nav-item {
@@ -1984,5 +2005,152 @@ select.form-input {
     }
     .header-actions {
         flex-wrap: wrap;
+    }
+}
+
+/* ==================== 文件管理 ==================== */
+
+.file-manager-container {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 20px;
+    max-width: 1200px;
+}
+
+.fm-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+}
+
+.fm-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+}
+
+.fm-card-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 4px 0;
+}
+
+.fm-card-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.fm-upload-zone {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--bg-tertiary);
+}
+
+.fm-upload-zone:hover {
+    border-color: var(--primary);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.fm-upload-zone.dragover {
+    border-color: var(--primary);
+    background: rgba(59, 130, 246, 0.1);
+}
+
+.fm-upload-zone p {
+    color: var(--text-secondary);
+    margin: 0 0 4px 0;
+    font-size: 14px;
+}
+
+.fm-upload-zone span {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.fm-upload-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.fm-upload-actions select {
+    flex: 1;
+}
+
+.upload-progress {
+    margin-top: 14px;
+}
+
+.upload-progress span {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 6px;
+    text-align: center;
+}
+
+.fm-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.fm-file-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    transition: background 0.15s ease;
+}
+
+.fm-file-item:hover {
+    background: var(--bg-hover);
+}
+
+.fm-file-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+.fm-file-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.fm-file-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fm-file-ext {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.fm-file-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+    .file-manager-container {
+        grid-template-columns: 1fr;
     }
 }

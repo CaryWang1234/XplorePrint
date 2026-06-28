@@ -57,6 +57,8 @@ class PrinterApp {
             this.loadCompetitions();
         } else if (view === 'operations') {
             this.renderOperations();
+        } else if (view === 'fileManager') {
+            this.renderFileManager();
         }
     }
 
@@ -997,6 +999,10 @@ class PrinterApp {
         return div.innerHTML;
     }
 
+    escapeJs(str) {
+        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
     // ==================== API 调用 ====================
 
     async addPrinter(data) {
@@ -1190,21 +1196,21 @@ class PrinterApp {
                         </div>
                     </div>
                     <div class="speed-control">
-                        <button class="speed-btn" onclick="manager.setSpeed('${printer.id}', 0)">
-                            🐢 低速
-                            <span class="speed-label">Silent</span>
-                        </button>
                         <button class="speed-btn" onclick="manager.setSpeed('${printer.id}', 1)">
-                            🐇 标准
-                            <span class="speed-label">Normal</span>
+                            🐢 低速
+                            <span class="speed-label">50%</span>
                         </button>
                         <button class="speed-btn" onclick="manager.setSpeed('${printer.id}', 2)">
-                            🦊 高速
-                            <span class="speed-label">Sport</span>
+                            🐇 标准
+                            <span class="speed-label">100%</span>
                         </button>
                         <button class="speed-btn" onclick="manager.setSpeed('${printer.id}', 3)">
+                            🦊 高速
+                            <span class="speed-label">124%</span>
+                        </button>
+                        <button class="speed-btn" onclick="manager.setSpeed('${printer.id}', 4)">
                             🚀 极速
-                            <span class="speed-label">Ludicrous</span>
+                            <span class="speed-label">166%</span>
                         </button>
                     </div>
                 </div>
@@ -1323,7 +1329,7 @@ class PrinterApp {
     }
 
     setSpeed(printerId, level) {
-        const labels = ['低速', '标准', '高速', '极速'];
+        const labels = { 1: '低速 (50%)', 2: '标准 (100%)', 3: '高速 (124%)', 4: '极速 (166%)' };
         this.sendCommand(printerId, 'set_speed', { level });
         this.showToast(`打印速度已设置为 ${labels[level]}`, 'info');
     }
@@ -1359,6 +1365,205 @@ class PrinterApp {
             history.innerHTML = `<span style="color:var(--green);">▶ ${this.escapeHtml(gcode)}</span><br>` + history.innerHTML;
         }
         input.value = '';
+    }
+
+    // ==================== 文件管理 ====================
+
+    renderFileManager() {
+        this._selectedFile = null;
+        const onlinePrinters = this.printers.filter(p => p.status !== 'offline');
+        const select = document.getElementById('fmPrinterSelect');
+        if (select) {
+            select.innerHTML = '<option value="">选择目标打印机...</option>' +
+                onlinePrinters.map(p => `<option value="${p.id}">${this.escapeHtml(p.name)} (${p.model})</option>`).join('');
+            select.onchange = () => {
+                this._selectedFmPrinter = select.value;
+                document.getElementById('uploadBtn').disabled = !select.value || !this._selectedFile;
+                if (select.value) {
+                    this.loadPrinterFiles(select.value);
+                }
+            };
+        }
+
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        if (uploadZone && fileInput) {
+            uploadZone.onclick = () => fileInput.click();
+            uploadZone.ondragover = (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); };
+            uploadZone.ondragleave = () => uploadZone.classList.remove('dragover');
+            uploadZone.ondrop = (e) => {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    this.handleFileSelect(e.dataTransfer.files[0]);
+                }
+            };
+            fileInput.onchange = () => {
+                if (fileInput.files.length > 0) {
+                    this.handleFileSelect(fileInput.files[0]);
+                }
+            };
+        }
+
+        document.getElementById('fmFileList').innerHTML = `
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                <p>请选择打印机并刷新</p>
+                <span>选择打印机后点击刷新查看文件列表</span>
+            </div>
+        `;
+    }
+
+    handleFileSelect(file) {
+        const validExts = ['.gcode', '.3mf', '.gcode.3mf'];
+        const ext = '.' + file.name.split('.').slice(1).join('.');
+        if (!validExts.some(v => file.name.endsWith(v))) {
+            this.showToast('不支持的文件格式，请选择 .gcode / .3mf / .gcode.3mf 文件', 'error');
+            return;
+        }
+        if (file.size > 200 * 1024 * 1024) {
+            this.showToast('文件大小超过 200MB 限制', 'error');
+            return;
+        }
+        this._selectedFile = file;
+        document.getElementById('uploadBtn').disabled = !document.getElementById('fmPrinterSelect').value;
+        const zone = document.getElementById('uploadZone');
+        zone.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;margin-bottom:12px;color:var(--green);">
+                <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <p style="color:var(--green);">${this.escapeHtml(file.name)}</p>
+            <span>${(file.size / 1024 / 1024).toFixed(2)} MB · 点击重新选择</span>
+        `;
+    }
+
+    async uploadFile() {
+        const printerId = document.getElementById('fmPrinterSelect').value;
+        if (!printerId || !this._selectedFile) return;
+
+        const formData = new FormData();
+        formData.append('file', this._selectedFile);
+
+        const progressEl = document.getElementById('uploadProgress');
+        const progressFill = document.getElementById('uploadProgressFill');
+        const progressText = document.getElementById('uploadProgressText');
+        document.getElementById('uploadBtn').disabled = true;
+        progressEl.style.display = 'block';
+        progressFill.style.width = '0%';
+        progressText.textContent = '上传中...';
+
+        try {
+            const res = await fetch(`/api/printers/${printerId}/upload`, {
+                method: 'POST',
+                body: formData,
+            });
+            const result = await res.json();
+            if (result.success) {
+                progressFill.style.width = '100%';
+                progressText.textContent = '上传成功';
+                this.showToast(`文件已上传到打印机`, 'success');
+                this.loadPrinterFiles(printerId);
+            } else {
+                progressText.textContent = '上传失败: ' + (result.message || '未知错误');
+                this.showToast('上传失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (e) {
+            progressText.textContent = '上传失败: 网络错误';
+            this.showToast('上传失败: 网络错误', 'error');
+        }
+        setTimeout(() => { progressEl.style.display = 'none'; }, 2000);
+    }
+
+    async loadPrinterFiles(printerId) {
+        try {
+            const res = await fetch(`/api/printers/${printerId}/files`);
+            const files = await res.json();
+            this.renderFileList(files, printerId);
+        } catch (e) {
+            document.getElementById('fmFileList').innerHTML = `
+                <div class="empty-state"><p>加载失败</p><span>${e.message}</span></div>
+            `;
+        }
+    }
+
+    renderFileList(files, printerId) {
+        const container = document.getElementById('fmFileList');
+        if (!files || files.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                    <p>打印机上没有文件</p>
+                    <span>上传 .gcode 或 .3mf 文件到打印机</span>
+                </div>
+            `;
+            return;
+        }
+        container.innerHTML = files.map(f => {
+            const ext = f.split('.').slice(-1)[0].toUpperCase();
+            const isGcode = f.endsWith('.gcode') || f.endsWith('.gcode.3mf');
+            const icon = isGcode ? '📄' : '📦';
+            return `
+                <div class="fm-file-item">
+                    <div class="fm-file-icon">${icon}</div>
+                    <div class="fm-file-info">
+                        <div class="fm-file-name" title="${this.escapeHtml(f)}">${this.escapeHtml(f)}</div>
+                        <div class="fm-file-ext">${ext}</div>
+                    </div>
+                    <div class="fm-file-actions">
+                        <button class="btn btn-sm btn-success" onclick="manager.startPrint('${printerId}', '${this.escapeJs(f)}')" title="开始打印">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="manager.deleteFile('${printerId}', '${this.escapeJs(f)}')" title="删除">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async startPrint(printerId, filename) {
+        if (!confirm(`确定要开始打印 "${filename}" 吗？`)) return;
+        try {
+            const res = await fetch(`/api/printers/${printerId}/print`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                this.showToast(`开始打印: ${filename}`, 'success');
+            } else {
+                this.showToast('启动失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (e) {
+            this.showToast('启动失败: 网络错误', 'error');
+        }
+    }
+
+    async deleteFile(printerId, filename) {
+        if (!confirm(`确定要删除 "${filename}" 吗？`)) return;
+        try {
+            const res = await fetch(`/api/printers/${printerId}/files/${encodeURIComponent(filename)}`, {
+                method: 'DELETE',
+            });
+            const result = await res.json();
+            if (result.success) {
+                this.showToast(`已删除: ${filename}`, 'success');
+                this.loadPrinterFiles(printerId);
+            } else {
+                this.showToast('删除失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (e) {
+            this.showToast('删除失败: 网络错误', 'error');
+        }
+    }
+
+    refreshFiles() {
+        const printerId = document.getElementById('fmPrinterSelect').value;
+        if (printerId) {
+            this.loadPrinterFiles(printerId);
+        }
     }
 }
 

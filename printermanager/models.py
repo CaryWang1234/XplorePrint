@@ -25,8 +25,14 @@ class PrinterModel(Enum):
     P1S = "P1S"
     P1S_COMBO = "P1S Combo"
     P1P = "P1P"
+    P2S = "P2S"
     A1 = "A1"
     A1_MINI = "A1 Mini"
+    H2D = "H2D"
+    H2S = "H2S"
+    H2C = "H2C"
+    X2D = "X2D"
+    A2L = "A2L"
     UNKNOWN = "Unknown"
 
 

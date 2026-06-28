@@ -454,6 +454,16 @@ class PrinterManager:
         ok = client.delete_file(filename)
         return {"success": ok, "message": "删除成功" if ok else "删除失败"}
 
+    def start_print(self, printer_id: str, filename: str) -> dict:
+        client = self._clients.get(printer_id)
+        if not client:
+            return {"success": False, "message": "打印机未连接"}
+        try:
+            client.start_print_file(filename)
+            return {"success": True, "message": f"开始打印: {filename}"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     def get_camera_url(self, printer_id: str) -> str:
         client = self._clients.get(printer_id)
         if not client:

@@ -105,6 +105,14 @@
                     </svg>
                     <span>设置</span>
                 </a>
+                <a href="#" class="nav-item" data-view="fileManager">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+                        <line x1="12" y1="11" x2="12" y2="17"/>
+                        <line x1="9" y1="14" x2="15" y2="14"/>
+                    </svg>
+                    <span>文件管理</span>
+                </a>
                 <a href="#" class="nav-item" data-view="operations">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polygon points="5 3 19 12 5 21 5 3"/>
@@ -319,6 +327,64 @@
                 <div class="competition-grid" id="competitionGrid"></div>
             </section>
 
+            <!-- File Manager View -->
+            <section id="fileManagerView" class="view">
+                <header class="page-header">
+                    <h2>文件管理</h2>
+                </header>
+                <div class="file-manager-container">
+                    <div class="file-manager-left">
+                        <div class="fm-card">
+                            <div class="fm-card-header">
+                                <h3>上传文件</h3>
+                                <span class="fm-card-subtitle">支持 .gcode / .3mf / .gcode.3mf</span>
+                            </div>
+                            <div class="fm-upload-zone" id="uploadZone">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;margin-bottom:12px;opacity:0.5;">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                    <polyline points="17 8 12 3 7 8"/>
+                                    <line x1="12" y1="3" x2="12" y2="15"/>
+                                </svg>
+                                <p>拖拽文件到此处或点击上传</p>
+                                <span>最大 200MB</span>
+                                <input type="file" id="fileInput" accept=".gcode,.3mf,.gcode.3mf" style="display:none">
+                            </div>
+                            <div class="fm-upload-actions">
+                                <select class="form-input" id="fmPrinterSelect">
+                                    <option value="">选择目标打印机...</option>
+                                </select>
+                                <button class="btn btn-primary btn-sm" id="uploadBtn" disabled onclick="manager.uploadFile()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 5 19 12"/></svg>
+                                    上传到打印机
+                                </button>
+                            </div>
+                            <div class="upload-progress" id="uploadProgress" style="display:none;">
+                                <div class="progress-bar"><div class="progress-fill" id="uploadProgressFill"></div></div>
+                                <span id="uploadProgressText">上传中...</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="file-manager-right">
+                        <div class="fm-card">
+                            <div class="fm-card-header">
+                                <h3>打印机文件</h3>
+                                <button class="btn btn-sm btn-outline" onclick="manager.refreshFiles()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                                    刷新
+                                </button>
+                            </div>
+                            <div class="fm-file-list" id="fmFileList">
+                                <div class="empty-state">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                                    <p>请选择打印机并刷新</p>
+                                    <span>选择打印机后点击刷新查看文件列表</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Operations View -->
             <section id="operationsView" class="view">
                 <header class="page-header">
@@ -398,9 +464,16 @@
                         <option value="X1 Carbon">X1 Carbon</option>
                         <option value="X1">X1</option>
                         <option value="P1S">P1S</option>
+                        <option value="P1S Combo">P1S Combo</option>
                         <option value="P1P">P1P</option>
+                        <option value="P2S">P2S</option>
                         <option value="A1">A1</option>
                         <option value="A1 Mini">A1 Mini</option>
+                        <option value="H2D">H2D</option>
+                        <option value="H2S">H2S</option>
+                        <option value="H2C">H2C</option>
+                        <option value="X2D">X2D</option>
+                        <option value="A2L">A2L</option>
                     </select>
                 </div>
                 <div class="modal-actions">
