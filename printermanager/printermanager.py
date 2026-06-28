@@ -454,14 +454,23 @@ class PrinterManager:
         ok = client.delete_file(filename)
         return {"success": ok, "message": "删除成功" if ok else "删除失败"}
 
-    def start_print(self, printer_id: str, filename: str) -> dict:
+    def start_print(self, printer_id: str, filename: str, plate_number: int = 1,
+                    use_ams: bool = True, ams_mapping: list[int] = None,
+                    flow_calibration: bool = True) -> dict:
         client = self._clients.get(printer_id)
         if not client:
             return {"success": False, "message": "打印机未连接"}
         try:
-            client.start_print_file(filename)
-            return {"success": True, "message": f"开始打印: {filename}"}
+            ok = client.start_print_file(
+                filename, plate_number=plate_number,
+                use_ams=use_ams, ams_mapping=ams_mapping,
+                flow_calibration=flow_calibration,
+            )
+            if ok:
+                return {"success": True, "message": f"开始打印: {filename}"}
+            return {"success": False, "message": "打印机未响应打印指令"}
         except Exception as e:
+            logger.error(f"Start print error: {e}")
             return {"success": False, "message": str(e)}
 
     def get_camera_url(self, printer_id: str) -> str:
@@ -746,32 +755,11 @@ class PrinterManager:
 
     def _init_frc_parts_library(self):
         path = os.path.join(DATA_DIR, "parts_library.json")
-        if not os.path.exists(path):
-            default_parts = [
-                PartTemplate("gusset_90", "90度连接件", "结构件", "标准90度角连接件", "PETG", 45, 25, "30%", 4, "用于底盘框架连接"),
-                PartTemplate("gusset_60", "60度连接件", "结构件", "60度角连接件", "PETG", 40, 22, "30%", 4, "三角形框架连接"),
-                PartTemplate("spacer_6mm", "6mm垫片", "垫片", "6mm内径精密垫片", "PLA", 5, 2, "100%", 5, "轴间距调整"),
-                PartTemplate("spacer_8mm", "8mm垫片", "垫片", "8mm内径精密垫片", "PLA", 6, 2, "100%", 5, "轴间距调整"),
-                PartTemplate("bearing_block", "轴承座", "传动件", "标准FRC轴承座", "PETG", 60, 35, "30%", 4, "适配1/2\"六角轴"),
-                PartTemplate("sensor_mount", "传感器座", "传感器座", "通用光电/限位传感器支架", "PLA", 30, 12, "20%", 3, "适配标准FRC传感器"),
-                PartTemplate("camera_mount", "摄像头支架", "传感器座", "USB摄像头安装支架", "PETG", 50, 20, "20%", 3, "可调角度"),
-                PartTemplate("motor_plate", "电机安装板", "传动件", "CIM/NEO电机安装板", "PETG", 90, 55, "40%", 5, "加强结构"),
-                PartTemplate("pulley_guard", "同步轮护罩", "安全件", "同步带轮防护罩", "PLA", 25, 10, "15%", 2, "安全防护"),
-                PartTemplate("wire_clip", "线缆卡扣", "电气件", "线缆固定卡扣", "PLA", 8, 3, "20%", 3, "线缆管理"),
-                PartTemplate("bumper_corner", "保险杠角", "保险杠", "保险杠转角保护件", "TPU", 35, 18, "50%", 3, "需要柔性材料"),
-                PartTemplate("battery_holder", "电池支架", "电气件", "12V电池固定支架", "PETG", 70, 45, "30%", 4, "适配标准FRC电池"),
-                PartTemplate("pneumatic_mount", "气动元件座", "气动件", "气缸/电磁阀安装座", "PETG", 40, 20, "30%", 3, "标准气动接口"),
-                PartTemplate("encoder_mount", "编码器座", "传感器座", "旋转编码器安装座", "PLA", 25, 10, "30%", 3, "精密定位"),
-                PartTemplate("shaft_collar", "轴套", "传动件", "轴限位套环", "PETG", 15, 8, "50%", 4, "1/2\"六角轴用"),
-                PartTemplate("climber_hook", "爬升钩", "爬升机构", "爬升机构挂钩", "PETG", 120, 80, "60%", 6, "高负载部件"),
-                PartTemplate("intake_roller", "吸 intake 滚轮", "Intake", "吸球机构滚轮", "TPU", 40, 22, "30%", 4, "需要柔性材料"),
-                PartTemplate("bumper_standoff", "保险杠支架", "保险杠", "保险杠固定支架", "PETG", 30, 15, "40%", 4, "适配标准保险杠"),
-                PartTemplate("gearbox_spacer", "变速箱垫片", "传动件", "变速箱精密垫片", "PLA", 10, 4, "100%", 5, "高精度要求"),
-                PartTemplate("limit_switch_trigger", "限位触发片", "传感器座", "限位开关触发片", "PLA", 8, 3, "50%", 3, "可调角度"),
-            ]
-            self._save_parts_library(default_parts)
-        else:
+        if os.path.exists(path):
             self._load_parts_library()
+        else:
+            self._parts_library: list[PartTemplate] = []
+            self._save_parts_library()
 
     def _load_parts_library(self):
         path = os.path.join(DATA_DIR, "parts_library.json")
@@ -781,6 +769,15 @@ class PrinterManager:
                     data = json.load(f)
                 self._parts_library: list[PartTemplate] = []
                 for item in data:
+                    files = []
+                    for fdata in item.get("files", []):
+                        files.append(PartFile(
+                            filename=fdata.get("filename", ""),
+                            path=fdata.get("path", ""),
+                            printer_model=fdata.get("printer_model", ""),
+                            version=fdata.get("version", ""),
+                            upload_date=fdata.get("upload_date", ""),
+                        ))
                     self._parts_library.append(PartTemplate(
                         id=item["id"],
                         name=item["name"],
@@ -792,6 +789,7 @@ class PrinterManager:
                         infill=item.get("infill", "20%"),
                         wall_loops=item.get("wall_loops", 3),
                         notes=item.get("notes", ""),
+                        files=files,
                     ))
             except Exception as e:
                 logger.error(f"Failed to load parts library: {e}")
@@ -806,6 +804,11 @@ class PrinterManager:
             "description": p.description, "recommended_material": p.recommended_material,
             "estimated_time": p.estimated_time, "filament_grams": p.filament_grams,
             "infill": p.infill, "wall_loops": p.wall_loops, "notes": p.notes,
+            "files": [{
+                "filename": f.filename, "path": f.path,
+                "printer_model": f.printer_model, "version": f.version,
+                "upload_date": f.upload_date,
+            } for f in p.files],
         } for p in self._parts_library]
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -819,6 +822,11 @@ class PrinterManager:
             "description": p.description, "recommended_material": p.recommended_material,
             "estimated_time": p.estimated_time, "filament_grams": p.filament_grams,
             "infill": p.infill, "wall_loops": p.wall_loops, "notes": p.notes,
+            "files": [{
+                "filename": f.filename, "path": f.path,
+                "printer_model": f.printer_model, "version": f.version,
+                "upload_date": f.upload_date,
+            } for f in p.files],
         } for p in parts]
 
     def get_parts_categories(self) -> list[str]:
@@ -826,6 +834,92 @@ class PrinterManager:
         for p in self._parts_library:
             cats.add(p.category)
         return sorted(cats)
+
+    def add_part_template(self, data: dict) -> dict:
+        part = PartTemplate(
+            id=data.get("id", str(uuid.uuid4())[:8]),
+            name=data["name"],
+            category=data.get("category", ""),
+            description=data.get("description", ""),
+            recommended_material=data.get("recommended_material", "PLA"),
+            estimated_time=data.get("estimated_time", 0),
+            filament_grams=data.get("filament_grams", 0),
+            infill=data.get("infill", "20%"),
+            wall_loops=data.get("wall_loops", 3),
+            notes=data.get("notes", ""),
+        )
+        self._parts_library.append(part)
+        self._save_parts_library()
+        self._notify()
+        return {
+            "id": part.id, "name": part.name, "category": part.category,
+            "description": part.description, "recommended_material": part.recommended_material,
+            "estimated_time": part.estimated_time, "filament_grams": part.filament_grams,
+            "infill": part.infill, "wall_loops": part.wall_loops, "notes": part.notes,
+        }
+
+    def update_part_template(self, part_id: str, data: dict) -> dict | None:
+        for i, p in enumerate(self._parts_library):
+            if p.id == part_id:
+                p.name = data.get("name", p.name)
+                p.category = data.get("category", p.category)
+                p.description = data.get("description", p.description)
+                p.recommended_material = data.get("recommended_material", p.recommended_material)
+                p.estimated_time = data.get("estimated_time", p.estimated_time)
+                p.filament_grams = data.get("filament_grams", p.filament_grams)
+                p.infill = data.get("infill", p.infill)
+                p.wall_loops = data.get("wall_loops", p.wall_loops)
+                p.notes = data.get("notes", p.notes)
+                self._save_parts_library()
+                self._notify()
+                return {
+                    "id": p.id, "name": p.name, "category": p.category,
+                    "description": p.description, "recommended_material": p.recommended_material,
+                    "estimated_time": p.estimated_time, "filament_grams": p.filament_grams,
+                    "infill": p.infill, "wall_loops": p.wall_loops, "notes": p.notes,
+                }
+        return None
+
+    def delete_part_template(self, part_id: str) -> bool:
+        for i, p in enumerate(self._parts_library):
+            if p.id == part_id:
+                self._parts_library.pop(i)
+                self._save_parts_library()
+                self._notify()
+                return True
+        return False
+
+    def upload_part_file(self, part_id: str, filename: str, filepath: str,
+                         printer_model: str = "", version: str = "") -> dict | None:
+        for p in self._parts_library:
+            if p.id == part_id:
+                part_file = PartFile(
+                    filename=filename,
+                    path=filepath,
+                    printer_model=printer_model,
+                    version=version,
+                    upload_date=datetime.now().strftime("%Y-%m-%d %H:%M"),
+                )
+                p.files.append(part_file)
+                self._save_parts_library()
+                self._notify()
+                return {
+                    "filename": part_file.filename, "path": part_file.path,
+                    "printer_model": part_file.printer_model, "version": part_file.version,
+                    "upload_date": part_file.upload_date,
+                }
+        return None
+
+    def delete_part_file(self, part_id: str, filepath: str) -> bool:
+        for p in self._parts_library:
+            if p.id == part_id:
+                for i, f in enumerate(p.files):
+                    if f.path == filepath:
+                        p.files.pop(i)
+                        self._save_parts_library()
+                        self._notify()
+                        return True
+        return False
 
     # ==================== 零件状态看板 ====================
 

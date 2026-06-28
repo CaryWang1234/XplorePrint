@@ -60,6 +60,9 @@ class BambuClient:
                 daemon=True,
             )
             self._poll_thread.start()
+
+            self._start_camera()
+
             logger.info(
                 f"Connected to {self.printer.name} "
                 f"at {self.printer.ip_address} via bambulabs_api"
@@ -68,6 +71,28 @@ class BambuClient:
             logger.error(f"Connection failed for {self.printer.name}: {e}")
             self.printer.status = PrinterStatus.OFFLINE
             self._connected = False
+
+    def _start_camera(self):
+        try:
+            self._api.camera_start()
+            logger.info(f"Camera started for {self.printer.name}")
+        except Exception as e:
+            logger.warning(f"Camera start failed for {self.printer.name}: {e}")
+
+    def _stop_camera(self):
+        try:
+            self._api.camera_stop()
+            logger.info(f"Camera stopped for {self.printer.name}")
+        except Exception as e:
+            logger.warning(f"Camera stop failed for {self.printer.name}: {e}")
+
+    def get_camera_frame(self) -> bytes | None:
+        try:
+            if self._api.camera_client and self._api.camera_client.last_frame:
+                return bytes(self._api.camera_client.last_frame)
+        except Exception:
+            pass
+        return None
 
     def _wait_for_printer_ready(self, timeout: float = 15.0):
         waited = 0.0
@@ -84,6 +109,7 @@ class BambuClient:
     def disconnect(self):
         self._stop_poll.set()
         self._connected = False
+        self._stop_camera()
         try:
             self._api.disconnect()
         except Exception as e:
@@ -308,11 +334,27 @@ class BambuClient:
             logger.debug(f"AMS data error: {e}")
             return []
 
-    def start_print_file(self, filename: str):
+    def start_print_file(self, filename: str, plate_number: int = 1,
+                         use_ams: bool = True,
+                         ams_mapping: list[int] = None,
+                         flow_calibration: bool = True) -> bool:
         try:
-            self._api.start_print(filename)
+            result = self._api.start_print(
+                filename,
+                plate_number,
+                use_ams=use_ams,
+                ams_mapping=ams_mapping or [0],
+                flow_calibration=flow_calibration,
+            )
+            logger.info(
+                f"Start print {filename} on {self.printer.name} "
+                f"plate={plate_number} use_ams={use_ams} "
+                f"mapping={ams_mapping or [0]} result={result}"
+            )
+            return bool(result)
         except Exception as e:
             logger.error(f"Start print failed for {self.printer.name}: {e}")
+            return False
 
     def get_camera_url(self) -> str:
         return f"rtsp://{self.printer.ip_address}:322/streaming/live/1"
@@ -320,10 +362,16 @@ class BambuClient:
     def upload_file(self, local_path: str, remote_name: str = None,
                     progress_callback: Callable = None) -> bool:
         try:
-            self._api.upload_file(local_path, remote_name)
+            from pathlib import Path
+            remote_name = remote_name or Path(local_path).name
+            ftp = self._api.ftp_client
+            if hasattr(ftp, 'ftps') and hasattr(ftp.ftps, 'timeout'):
+                ftp.ftps.timeout = 120
+            with open(local_path, "rb") as f:
+                self._api.upload_file(f, remote_name)
             if progress_callback:
                 progress_callback(100)
-            logger.info(f"Uploaded {local_path} to {self.printer.name}")
+            logger.info(f"Uploaded {remote_name} to {self.printer.name}")
             return True
         except Exception as e:
             logger.error(f"Upload failed for {self.printer.name}: {e}")
@@ -333,11 +381,20 @@ class BambuClient:
         try:
             ftp = self._api.ftp_client
             if ftp:
-                files = ftp.list_directory()
-                return [
-                    f for f in files
-                    if f.endswith((".3mf", ".gcode", ".gcode.3mf"))
-                ]
+                result = ftp.list_directory()
+                if isinstance(result, tuple) and len(result) == 2:
+                    _, lines = result
+                else:
+                    lines = result if isinstance(result, list) else []
+                filenames = []
+                for line in lines:
+                    if isinstance(line, str):
+                        parts = line.split()
+                        if parts:
+                            name = parts[-1]
+                            if name.endswith((".3mf", ".gcode", ".gcode.3mf")):
+                                filenames.append(name)
+                return filenames
             return []
         except Exception as e:
             logger.error(f"List files failed for {self.printer.name}: {e}")

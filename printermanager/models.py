@@ -191,6 +191,14 @@ class Robot:
 
 
 @dataclass
+class PartFile:
+    filename: str
+    path: str = ""
+    printer_model: str = ""
+    version: str = ""
+    upload_date: str = ""
+
+@dataclass
 class PartTemplate:
     id: str
     name: str
@@ -202,6 +210,7 @@ class PartTemplate:
     infill: str = "20%"
     wall_loops: int = 3
     notes: str = ""
+    files: list[PartFile] = field(default_factory=list)
 
 
 @dataclass

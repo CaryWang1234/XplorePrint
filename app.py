@@ -141,13 +141,46 @@ def start_print(printer_id):
     filename = data.get("filename", "")
     if not filename:
         return jsonify({"success": False, "message": "未指定文件名"}), 400
-    return jsonify(manager.start_print(printer_id, filename))
+    return jsonify(manager.start_print(
+        printer_id,
+        filename,
+        plate_number=data.get("plate_number", 1),
+        use_ams=data.get("use_ams", True),
+        ams_mapping=data.get("ams_mapping"),
+        flow_calibration=data.get("flow_calibration", True),
+    ))
 
 
 @app.route("/api/printers/<printer_id>/camera", methods=["GET"])
 def get_camera_url(printer_id):
     url = manager.get_camera_url(printer_id)
     return jsonify({"url": url})
+
+
+@app.route("/api/printers/<printer_id>/video")
+def video_stream(printer_id):
+    return _snapshot_response(printer_id)
+
+
+@app.route("/api/printers/<printer_id>/snapshot")
+def video_snapshot(printer_id):
+    return _snapshot_response(printer_id)
+
+
+def _snapshot_response(printer_id):
+    logger = logging.getLogger(__name__)
+    client = manager._clients.get(printer_id)
+    if not client:
+        return "Printer not connected", 404
+
+    frame = client.get_camera_frame()
+    if frame:
+        return Response(
+            frame,
+            mimetype='image/jpeg',
+            headers={'Cache-Control': 'no-cache, no-store, must-revalidate'}
+        )
+    return Response(status=502)
 
 
 @app.route("/api/stats", methods=["GET"])
@@ -346,6 +379,73 @@ def get_parts_library():
 @app.route("/api/parts/categories", methods=["GET"])
 def get_parts_categories():
     return jsonify(manager.get_parts_categories())
+
+
+@app.route("/api/parts/library", methods=["POST"])
+def add_part_template():
+    data = request.json
+    if not data.get("name"):
+        return jsonify({"status": "error", "message": "零件名称不能为空"}), 400
+    result = manager.add_part_template(data)
+    return jsonify({"status": "ok", "part": result})
+
+
+@app.route("/api/parts/library/<part_id>", methods=["PUT"])
+def update_part_template(part_id):
+    data = request.json
+    result = manager.update_part_template(part_id, data)
+    if result is None:
+        return jsonify({"status": "error", "message": "零件不存在"}), 404
+    return jsonify({"status": "ok", "part": result})
+
+
+@app.route("/api/parts/library/<part_id>", methods=["DELETE"])
+def delete_part_template(part_id):
+    if manager.delete_part_template(part_id):
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "error", "message": "零件不存在"}), 404
+
+
+@app.route("/api/parts/library/<part_id>/files", methods=["POST"])
+def upload_part_file(part_id):
+    if "file" not in request.files:
+        return jsonify({"status": "error", "message": "未选择文件"}), 400
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"status": "error", "message": "文件名为空"}), 400
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".gcode", ".3mf"):
+        return jsonify({"status": "error", "message": "仅支持 .gcode 和 .3mf 文件"}), 400
+    part_dir = os.path.join(DATA_DIR, "parts_files", part_id)
+    os.makedirs(part_dir, exist_ok=True)
+    safe_name = f"{int(time.time()*1000)}_{file.filename}"
+    save_path = os.path.join(part_dir, safe_name)
+    file.save(save_path)
+    printer_model = request.form.get("printer_model", "").strip()
+    version = request.form.get("version", "").strip()
+    result = manager.upload_part_file(part_id, file.filename, save_path, printer_model, version)
+    if result is None:
+        os.remove(save_path)
+        return jsonify({"status": "error", "message": "零件不存在"}), 404
+    return jsonify({"status": "ok", "part_file": result})
+
+
+@app.route("/api/parts/library/<part_id>/files/<path:filepath>", methods=["DELETE"])
+def delete_part_file(part_id, filepath):
+    full_path = os.path.join(DATA_DIR, "parts_files", part_id, filepath)
+    if manager.delete_part_file(part_id, full_path):
+        if os.path.exists(full_path):
+            os.remove(full_path)
+        return jsonify({"status": "ok"})
+    return jsonify({"status": "error", "message": "文件不存在"}), 404
+
+
+@app.route("/api/parts/files/<part_id>/<path:filename>", methods=["GET"])
+def download_part_file(part_id, filename):
+    filepath = os.path.join(DATA_DIR, "parts_files", part_id, filename)
+    if not os.path.exists(filepath):
+        return jsonify({"status": "error", "message": "文件不存在"}), 404
+    return send_file(filepath, as_attachment=True, download_name=os.path.basename(filename))
 
 
 # ==================== 零件状态看板 API ====================

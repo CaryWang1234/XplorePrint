@@ -160,9 +160,15 @@ class PrinterApp {
     }
 
     updatePrinterCard(card, printer) {
+        const videoPanel = card.querySelector('.video-panel');
+        const videoVisible = videoPanel && videoPanel.style.display !== 'none';
         const temp = card.querySelector('.printer-card-content');
         if (temp) {
             temp.innerHTML = this.getPrinterCardInnerHTML(printer);
+        }
+        if (videoVisible) {
+            const newPanel = card.querySelector('.video-panel');
+            if (newPanel) newPanel.style.display = 'block';
         }
         this.bindCardActions(card, printer);
     }
@@ -257,12 +263,27 @@ class PrinterApp {
                     <div class="printer-name">${this.escapeHtml(printer.name)}</div>
                     <div class="printer-model">${printer.model} · ${printer.ip_address || '未配置IP'}</div>
                 </div>
-                <span class="status-badge ${statusClass}">
-                    <span class="status-dot"></span>${statusText}
-                </span>
+                <div class="header-actions">
+                    <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();manager.toggleVideo('${printer.id}')" title="实况视频">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                    </button>
+                    <span class="status-badge ${statusClass}">
+                        <span class="status-dot"></span>${statusText}
+                    </span>
+                </div>
             </div>
             ${errorHTML}
             ${progressHTML}
+            <div class="video-panel" id="video-${printer.id}" style="display:none;">
+                <div class="video-wrapper">
+                    <img src="" alt="实况视频" class="video-stream" id="video-img-${printer.id}"
+                         style="opacity:0;">
+                    <div class="video-placeholder" id="video-placeholder-${printer.id}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        <span>等待视频流...</span>
+                    </div>
+                </div>
+            </div>
             <div class="temp-grid">
                 <div class="temp-item">
                     <span class="temp-label">喷头</span>
@@ -371,13 +392,16 @@ class PrinterApp {
                     <div class="queue-detail">
                         <div class="queue-file">${this.escapeHtml(item.file_name)} ${priorityLabels[item.priority] || ''}</div>
                         <div class="queue-meta">
-                            ${item.printer_name} · ${item.material} · ${item.estimated_time ? item.estimated_time + '分钟' : '未知时间'}
+                            ${this.escapeHtml(item.printer_name)} · ${this.escapeHtml(item.material)} · ${item.estimated_time ? item.estimated_time + '分钟' : '未知时间'}
                             ${item.notes ? ' · ' + this.escapeHtml(item.notes) : ''}
                         </div>
                     </div>
                 </div>
                 <span class="queue-status ${item.status}">${statusMap[item.status] || item.status}</span>
                 <div class="queue-actions">
+                    ${item.status === 'waiting' ? `
+                        <button class="btn btn-sm btn-primary" onclick="manager.startPrint('${this.escapeJs(item.printer_id)}', '${this.escapeJs(item.file_name)}')">开始打印</button>
+                    ` : ''}
                     <button class="btn btn-sm btn-outline btn-danger" onclick="manager.removeQueueItem('${item.id}')">删除</button>
                 </div>
             </div>
@@ -750,14 +774,23 @@ class PrinterApp {
                 <div class="empty-state">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
                     <p>暂无零件模板</p>
+                    <button class="btn btn-primary btn-sm" onclick="manager.showPartModal()">添加第一个零件</button>
                 </div>
             `;
             return;
         }
         grid.innerHTML = parts.map(p => `
-            <div class="part-card" onclick="manager.quickAddPart('${p.id}')">
+            <div class="part-card">
                 <div class="part-card-header">
-                    <div class="part-card-name">${this.escapeHtml(p.name)}</div>
+                    <div class="part-card-name" onclick="manager.quickAddPart('${p.id}')" style="cursor:pointer;">${this.escapeHtml(p.name)}</div>
+                    <div class="part-card-actions">
+                        <button class="btn-icon" onclick="event.stopPropagation();manager.editPart('${p.id}')" title="编辑">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <button class="btn-icon btn-icon-danger" onclick="event.stopPropagation();manager.deletePart('${p.id}')" title="删除">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                        </button>
+                    </div>
                     <span class="part-card-category">${p.category}</span>
                 </div>
                 <div class="part-card-desc">${this.escapeHtml(p.description)}</div>
@@ -768,9 +801,234 @@ class PrinterApp {
                     <span>🔧 ${p.recommended_material}</span>
                 </div>
                 <div class="part-card-notes">💡 ${this.escapeHtml(p.notes)}</div>
-                <button class="btn btn-sm btn-primary" style="width:100%;">快速添加到队列</button>
+                ${p.files && p.files.length > 0 ? `
+                <div class="part-card-files">
+                    <div class="part-card-files-title">📁 切片文件 (${p.files.length})</div>
+                    ${p.files.map(f => `
+                    <div class="part-file-tag" title="${this.escapeHtml(f.path)}" onclick="event.stopPropagation();manager.downloadPartFile('${p.id}', '${this._encodeFilePath(f.path)}')">
+                        <span class="part-file-tag-name">${this.escapeHtml(f.filename)}</span>
+                        ${f.printer_model ? `<span class="part-file-tag-model">${this.escapeHtml(f.printer_model)}</span>` : ''}
+                        ${f.version ? `<span class="part-file-tag-ver">v${this.escapeHtml(f.version)}</span>` : ''}
+                    </div>
+                    `).join('')}
+                </div>
+                ` : ''}
+                <button class="btn btn-sm btn-primary" style="width:100%;" onclick="manager.quickAddPart('${p.id}')">快速添加到队列</button>
             </div>
         `).join('');
+        this._updatePartCategoryDatalist();
+    }
+
+    _updatePartCategoryDatalist() {
+        const datalist = document.getElementById('partCategoryList');
+        if (!datalist) return;
+        const cats = new Set();
+        this.partsLibrary.forEach(p => { if (p.category) cats.add(p.category); });
+        datalist.innerHTML = [...cats].map(c => `<option value="${c}">`).join('');
+    }
+
+    showPartModal(partId = null) {
+        document.getElementById('partModalTitle').textContent = partId ? '编辑零件' : '添加零件';
+        document.getElementById('partSubmitBtn').textContent = partId ? '保存修改' : '添加零件';
+        document.getElementById('partEditId').value = partId || '';
+        document.getElementById('partName').value = '';
+        document.getElementById('partCategory').value = '';
+        document.getElementById('partMaterial').value = 'PETG';
+        document.getElementById('partDesc').value = '';
+        document.getElementById('partTime').value = '30';
+        document.getElementById('partGrams').value = '20';
+        document.getElementById('partInfill').value = '30%';
+        document.getElementById('partWalls').value = '3';
+        document.getElementById('partNotes').value = '';
+        this._editPartId = partId;
+        this._pendingFiles = [];
+        this._updatePartCategoryDatalist();
+        if (partId) {
+            const part = this.partsLibrary.find(p => p.id === partId);
+            if (part) {
+                document.getElementById('partName').value = part.name;
+                document.getElementById('partCategory').value = part.category;
+                document.getElementById('partMaterial').value = part.recommended_material;
+                document.getElementById('partDesc').value = part.description;
+                document.getElementById('partTime').value = part.estimated_time;
+                document.getElementById('partGrams').value = part.filament_grams;
+                document.getElementById('partInfill').value = part.infill;
+                document.getElementById('partWalls').value = part.wall_loops;
+                document.getElementById('partNotes').value = part.notes;
+                this._renderPartFileList(part.files || []);
+            }
+        } else {
+            this._renderPartFileList([]);
+        }
+        document.getElementById('partModalOverlay').style.display = 'flex';
+    }
+
+    _renderPartFileList(files) {
+        const container = document.getElementById('partFileList');
+        if (!container) return;
+        const allFiles = [...files, ...this._pendingFiles];
+        if (allFiles.length === 0) {
+            container.innerHTML = '<div class="part-file-empty">暂无切片文件</div>';
+            return;
+        }
+        container.innerHTML = allFiles.map((f, i) => {
+            const isPending = i >= files.length;
+            const path = f.path || '';
+            const basename = path.split(/[/\\]/).pop() || f.filename;
+            return `
+            <div class="part-file-item">
+                <span class="part-file-item-name">${this.escapeHtml(f.filename)}</span>
+                ${f.printer_model ? `<span class="part-file-tag-model">${this.escapeHtml(f.printer_model)}</span>` : ''}
+                ${f.version ? `<span class="part-file-tag-ver">v${this.escapeHtml(f.version)}</span>` : ''}
+                ${isPending ? '<span class="part-file-tag-pending">待上传</span>' : ''}
+                <button class="btn-icon btn-icon-danger" onclick="manager._removePartFile(${i}, '${this._encodeFilePath(basename)}')" title="删除">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            `;
+        }).join('');
+    }
+
+    _encodeFilePath(path) {
+        return btoa(unescape(encodeURIComponent(path)));
+    }
+
+    triggerPartFileUpload() {
+        document.getElementById('partFileInput').click();
+    }
+
+    handlePartFileUpload(e) {
+        const files = Array.from(e.target.files);
+        for (const file of files) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['gcode', '3mf'].includes(ext)) {
+                this.showToast(`不支持的文件类型: ${file.name}`, 'error');
+                continue;
+            }
+            this._pendingFiles.push({
+                filename: file.name,
+                path: '',
+                printer_model: '',
+                version: '',
+                _file: file,
+            });
+        }
+        this._renderPartFileList(this._getCurrentPartFiles());
+        e.target.value = '';
+    }
+
+    _getCurrentPartFiles() {
+        const partId = this._editPartId;
+        if (partId) {
+            const part = this.partsLibrary.find(p => p.id === partId);
+            return part ? (part.files || []) : [];
+        }
+        return [];
+    }
+
+    _removePartFile(index, basename) {
+        const existingFiles = this._getCurrentPartFiles();
+        if (index < existingFiles.length) {
+            const file = existingFiles[index];
+            const path = file.path || file.filename;
+            fetch(`/api/parts/library/${this._editPartId}/files/${encodeURIComponent(basename)}`, { method: 'DELETE' })
+                .then(() => {
+                    this.showToast('文件已删除', 'info');
+                    this.loadPartsLibrary().then(() => {
+                        const part = this.partsLibrary.find(p => p.id === this._editPartId);
+                        this._renderPartFileList(part ? (part.files || []) : []);
+                    });
+                })
+                .catch(() => this.showToast('删除失败', 'error'));
+        } else {
+            const pendingIdx = index - existingFiles.length;
+            this._pendingFiles.splice(pendingIdx, 1);
+            this._renderPartFileList(existingFiles);
+        }
+    }
+
+    downloadPartFile(partId, encodedPath) {
+        const filename = decodeURIComponent(escape(atob(encodedPath)));
+        const basename = filename.split(/[/\\]/).pop();
+        window.open(`/api/parts/files/${partId}/${encodeURIComponent(basename)}`, '_blank');
+    }
+
+    editPart(partId) {
+        this.showPartModal(partId);
+    }
+
+    closePartModal() {
+        document.getElementById('partModalOverlay').style.display = 'none';
+    }
+
+    async savePart(e) {
+        e.preventDefault();
+        const editId = document.getElementById('partEditId').value;
+        const data = {
+            name: document.getElementById('partName').value.trim(),
+            category: document.getElementById('partCategory').value.trim(),
+            recommended_material: document.getElementById('partMaterial').value,
+            description: document.getElementById('partDesc').value.trim(),
+            estimated_time: parseInt(document.getElementById('partTime').value) || 0,
+            filament_grams: parseInt(document.getElementById('partGrams').value) || 0,
+            infill: document.getElementById('partInfill').value,
+            wall_loops: parseInt(document.getElementById('partWalls').value) || 3,
+            notes: document.getElementById('partNotes').value.trim(),
+        };
+        if (!data.name) {
+            this.showToast('零件名称不能为空', 'error');
+            return;
+        }
+        try {
+            const method = editId ? 'PUT' : 'POST';
+            const url = editId ? `/api/parts/library/${editId}` : '/api/parts/library';
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const result = await res.json();
+            if (result.status === 'ok') {
+                const savedPartId = result.part ? result.part.id : editId;
+                if (this._pendingFiles && this._pendingFiles.length > 0) {
+                    for (const pf of this._pendingFiles) {
+                        const formData = new FormData();
+                        formData.append('file', pf._file);
+                        formData.append('printer_model', pf.printer_model);
+                        formData.append('version', pf.version);
+                        await fetch(`/api/parts/library/${savedPartId}/files`, {
+                            method: 'POST',
+                            body: formData,
+                        });
+                    }
+                }
+                this.showToast(editId ? '零件已更新' : '零件已添加', 'success');
+                this.closePartModal();
+                this.loadPartsLibrary();
+            } else {
+                this.showToast(result.message || '操作失败', 'error');
+            }
+        } catch (e) {
+            this.showToast('网络错误', 'error');
+        }
+    }
+
+    async deletePart(partId) {
+        const part = this.partsLibrary.find(p => p.id === partId);
+        if (!part) return;
+        if (!confirm(`确定要删除零件"${part.name}"吗？此操作不可撤销。`)) return;
+        try {
+            const res = await fetch(`/api/parts/library/${partId}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.status === 'ok') {
+                this.showToast('零件已删除', 'info');
+                this.loadPartsLibrary();
+            } else {
+                this.showToast(result.message || '删除失败', 'error');
+            }
+        } catch (e) {
+            this.showToast('网络错误', 'error');
+        }
     }
 
     async quickAddPart(partId) {
@@ -1451,6 +1709,73 @@ class PrinterApp {
         input.value = '';
     }
 
+    toggleVideo(printerId) {
+        const panel = document.getElementById(`video-${printerId}`);
+        if (!panel) return;
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            this._startVideoPoll(printerId);
+        } else {
+            panel.style.display = 'none';
+            this._stopVideoPoll(printerId);
+        }
+    }
+
+    _startVideoPoll(printerId) {
+        if (!this._videoTimers) this._videoTimers = {};
+        if (!this._videoBlobs) this._videoBlobs = {};
+        this._stopVideoPoll(printerId);
+        const poll = () => {
+            const img = document.getElementById(`video-img-${printerId}`);
+            const placeholder = document.getElementById(`video-placeholder-${printerId}`);
+            if (!img) {
+                this._stopVideoPoll(printerId);
+                return;
+            }
+            const panel = document.getElementById(`video-${printerId}`);
+            if (panel && panel.style.display === 'none') {
+                this._stopVideoPoll(printerId);
+                return;
+            }
+            const url = `/api/printers/${printerId}/snapshot?t=${Date.now()}`;
+            fetch(url)
+                .then(res => {
+                    if (!res.ok) throw new Error('no frame');
+                    return res.blob();
+                })
+                .then(blob => {
+                    const objectUrl = URL.createObjectURL(blob);
+                    const oldUrl = this._videoBlobs[printerId];
+                    img.src = objectUrl;
+                    this._videoBlobs[printerId] = objectUrl;
+                    img.style.opacity = '1';
+                    if (placeholder) placeholder.style.display = 'none';
+                    if (oldUrl) URL.revokeObjectURL(oldUrl);
+                })
+                .catch(() => {
+                    if (!img.src || img.style.opacity === '0') {
+                        if (placeholder) {
+                            placeholder.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="32" height="32"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg><span>等待视频流...</span>`;
+                            placeholder.style.display = 'flex';
+                        }
+                    }
+                });
+        };
+        poll();
+        this._videoTimers[printerId] = setInterval(poll, 500);
+    }
+
+    _stopVideoPoll(printerId) {
+        if (this._videoTimers && this._videoTimers[printerId]) {
+            clearInterval(this._videoTimers[printerId]);
+            delete this._videoTimers[printerId];
+        }
+        if (this._videoBlobs && this._videoBlobs[printerId]) {
+            URL.revokeObjectURL(this._videoBlobs[printerId]);
+            delete this._videoBlobs[printerId];
+        }
+    }
+
     // ==================== 文件管理 ====================
 
     renderFileManager() {
@@ -1607,16 +1932,78 @@ class PrinterApp {
     }
 
     async startPrint(printerId, filename) {
-        if (!confirm(`确定要开始打印 "${filename}" 吗？`)) return;
+        this._amsPrintPrinterId = printerId;
+        this._amsPrintFilename = filename;
+        this.showAmsMappingModal(printerId, filename);
+    }
+
+    showAmsMappingModal(printerId, filename) {
+        document.getElementById('amsFilename').textContent = filename;
+        document.getElementById('amsPlateNumber').value = 1;
+        document.getElementById('amsUseAms').checked = true;
+        document.getElementById('amsFlowCalibration').checked = true;
+
+        const printer = this.printers.find(p => p.id === printerId);
+        const traysContainer = document.getElementById('amsMappingTrays');
+        if (printer && printer.ams_units && printer.ams_units.length > 0) {
+            let html = '<div class="ams-tray-grid">';
+            printer.ams_units.forEach((tray, idx) => {
+                const trayNum = tray.tray_id || (idx + 1);
+                html += `
+                    <div class="ams-tray-item">
+                        <div class="ams-tray-swatch" style="background:${tray.color || '#CCC'};"></div>
+                        <div class="ams-tray-info">
+                            <span class="ams-tray-id">槽位 ${trayNum}</span>
+                            <span class="ams-tray-mat">${this.escapeHtml(tray.material || '?')}</span>
+                        </div>
+                        <select class="form-input ams-tray-select" data-tray="${trayNum}" style="width:70px;padding:4px 8px;font-size:12px;">
+                            <option value="0">不使用</option>`;
+                for (let i = 1; i <= 4; i++) {
+                    html += `<option value="${i}" ${i === idx + 1 ? 'selected' : ''}>耗材${i}</option>`;
+                }
+                html += `</select></div>`;
+            });
+            html += '</div>';
+            html += '<span style="font-size:11px;color:var(--text-muted);">将 AMS 槽位映射到 G-code 中的耗材编号</span>';
+            traysContainer.innerHTML = html;
+        } else {
+            traysContainer.innerHTML = '<div class="empty-state" style="padding:12px;"><p>无 AMS 数据</p><span>该打印机可能未安装 AMS</span></div>';
+        }
+        document.getElementById('amsMappingModal').classList.add('active');
+    }
+
+    async confirmStartPrint() {
+        const printerId = this._amsPrintPrinterId;
+        const filename = this._amsPrintFilename;
+        if (!printerId || !filename) return;
+
+        const plateNumber = parseInt(document.getElementById('amsPlateNumber').value) || 1;
+        const useAms = document.getElementById('amsUseAms').checked;
+        const flowCalibration = document.getElementById('amsFlowCalibration').checked;
+
+        const traySelects = document.querySelectorAll('.ams-tray-select');
+        const amsMapping = [];
+        traySelects.forEach(sel => {
+            const val = parseInt(sel.value);
+            if (val > 0) amsMapping.push(val);
+        });
+
         try {
             const res = await fetch(`/api/printers/${printerId}/print`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ filename }),
+                body: JSON.stringify({
+                    filename,
+                    plate_number: plateNumber,
+                    use_ams: useAms,
+                    ams_mapping: amsMapping.length > 0 ? amsMapping : null,
+                    flow_calibration: flowCalibration,
+                }),
             });
             const result = await res.json();
             if (result.success) {
                 this.showToast(`开始打印: ${filename}`, 'success');
+                closeAmsMappingModal();
             } else {
                 this.showToast('启动失败: ' + (result.message || '未知错误'), 'error');
             }
@@ -1700,6 +2087,10 @@ function closeQueueModal() {
     document.getElementById('queueFileInput').value = '';
     document.getElementById('queueModal').classList.remove('active');
     document.getElementById('queueForm').reset();
+}
+
+function closeAmsMappingModal() {
+    document.getElementById('amsMappingModal').classList.remove('active');
 }
 
 function addQueueItem(event) {

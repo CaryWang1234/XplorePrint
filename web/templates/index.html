@@ -240,7 +240,12 @@
             <section id="partsLibraryView" class="view">
                 <header class="page-header">
                     <h2>FRC零件库</h2>
-                    <span style="font-size:13px;color:var(--text-muted);">预置常用FRC零件模板，快速添加到打印队列</span>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" onclick="manager.showPartModal()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            添加零件
+                        </button>
+                    </div>
                 </header>
                 <div class="parts-library-toolbar">
                     <select class="form-input" id="partsCategoryFilter" onchange="manager.filterPartsLibrary()" style="width:200px;">
@@ -586,6 +591,46 @@
         </div>
     </div>
 
+    <!-- AMS Mapping Modal -->
+    <div class="modal-overlay" id="amsMappingModal">
+        <div class="modal" style="width:500px;">
+            <div class="modal-header">
+                <h3>发起打印</h3>
+                <button class="modal-close" onclick="closeAmsMappingModal()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="ams-mapping-body">
+                <div class="form-group">
+                    <label>文件名</label>
+                    <div class="ams-filename" id="amsFilename">—</div>
+                </div>
+                <div class="form-group">
+                    <label>打印板序号</label>
+                    <input type="number" class="form-input" id="amsPlateNumber" value="1" min="1" style="width:100px;">
+                </div>
+                <div class="form-group">
+                    <label>AMS 耗材映射</label>
+                    <div class="ams-mapping-trays" id="amsMappingTrays"></div>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="amsUseAms" checked> 使用 AMS 自动供料
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="amsFlowCalibration" checked> 自动流量校准
+                    </label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-outline" onclick="closeAmsMappingModal()">取消</button>
+                <button type="button" class="btn btn-primary" onclick="manager.confirmStartPrint()">开始打印</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Filament Modal -->
     <div class="modal-overlay" id="filamentModal">
         <div class="modal">
@@ -729,6 +774,91 @@
 
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Part Modal -->
+    <div class="modal-overlay" id="partModalOverlay" style="display:none;" onclick="if(event.target===this)manager.closePartModal()">
+        <div class="modal" style="max-width:520px;">
+            <div class="modal-header">
+                <h3 id="partModalTitle">添加零件</h3>
+                <button class="modal-close" onclick="manager.closePartModal()">&times;</button>
+            </div>
+            <form id="partForm" onsubmit="manager.savePart(event)">
+                <input type="hidden" id="partEditId">
+                <div class="form-group">
+                    <label>零件名称 <span style="color:var(--danger);">*</span></label>
+                    <input type="text" class="form-input" id="partName" required placeholder="例如: 齿轮箱外壳">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>类别</label>
+                        <input type="text" class="form-input" id="partCategory" placeholder="例如: 传动件" list="partCategoryList">
+                        <datalist id="partCategoryList"></datalist>
+                    </div>
+                    <div class="form-group">
+                        <label>推荐材料</label>
+                        <select class="form-input" id="partMaterial">
+                            <option value="PLA">PLA</option>
+                            <option value="PETG" selected>PETG</option>
+                            <option value="ABS">ABS</option>
+                            <option value="TPU">TPU</option>
+                            <option value="ASA">ASA</option>
+                            <option value="PC">PC</option>
+                            <option value="PA-CF">PA-CF</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>描述</label>
+                    <input type="text" class="form-input" id="partDesc" placeholder="简短描述零件用途">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>预估时间 (分钟)</label>
+                        <input type="number" class="form-input" id="partTime" min="0" value="30">
+                    </div>
+                    <div class="form-group">
+                        <label>耗材重量 (克)</label>
+                        <input type="number" class="form-input" id="partGrams" min="0" value="20">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>填充率</label>
+                        <select class="form-input" id="partInfill">
+                            <option value="15%">15%</option>
+                            <option value="20%">20%</option>
+                            <option value="30%" selected>30%</option>
+                            <option value="40%">40%</option>
+                            <option value="50%">50%</option>
+                            <option value="60%">60%</option>
+                            <option value="100%">100%</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>壁厚层数</label>
+                        <input type="number" class="form-input" id="partWalls" min="1" max="10" value="3">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>备注</label>
+                    <input type="text" class="form-input" id="partNotes" placeholder="可选备注">
+                </div>
+                <div class="form-group">
+                    <label>切片文件</label>
+                    <div class="part-file-upload" onclick="manager.triggerPartFileUpload()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="20" height="20"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <span>点击上传 .gcode / .3mf 文件</span>
+                    </div>
+                    <input type="file" id="partFileInput" accept=".gcode,.3mf" style="display:none;" onchange="manager.handlePartFileUpload(event)" multiple>
+                    <div class="part-file-list" id="partFileList"></div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-outline" onclick="manager.closePartModal()">取消</button>
+                    <button type="submit" class="btn btn-primary" id="partSubmitBtn">添加零件</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="/static/js/app.js"></script>
