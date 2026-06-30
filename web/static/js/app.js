@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/**
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/**
  * XplorePrint - Main Application JavaScript
  * FRC Team 11019 Xplore
  * 3D Printer Management Software
@@ -73,6 +73,14 @@ class PrinterApp {
             this.renderOperations();
         } else if (view === 'fileManager') {
             this.renderFileManager();
+        } else if (view === 'competition') {
+            this.refreshDrives();
+            this.loadCompFiles();
+            this.loadChecklist();
+        } else if (view === 'settings') {
+            this.loadExportPathSetting();
+        } else if (view === 'toolbox') {
+            this.renderToolbox();
         }
     }
 
@@ -3080,6 +3088,495 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
             this.loadStorageFiles();
         }
     }
+
+    // ==================== 赛场工具 ====================
+
+    async refreshDrives() {
+        const select = document.getElementById('compDriveSelect');
+        const info = document.getElementById('compDriveInfo');
+        select.innerHTML = '<option value="">检测中...</option>';
+        try {
+            const res = await fetch('/api/competition/drives');
+            const data = await res.json();
+            if (!data.success || !data.drives || data.drives.length === 0) {
+                select.innerHTML = '<option value="">未检测到 SD 卡</option>';
+                info.style.display = 'none';
+                return;
+            }
+            select.innerHTML = '<option value="">选择 SD 卡...</option>';
+            data.drives.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.DeviceID + '\\';
+                opt.textContent = `${d.DeviceID} ${d.VolumeName || 'SD Card'} (${d.FreeSpaceGB} GB 可用 / ${d.SizeGB} GB)`;
+                select.appendChild(opt);
+            });
+            select.onchange = () => {
+                const sel = select.options[select.selectedIndex];
+                if (select.value) {
+                    info.style.display = 'block';
+                    info.textContent = sel.textContent;
+                } else {
+                    info.style.display = 'none';
+                }
+                this._updateExportBtn();
+            };
+        } catch (e) {
+            select.innerHTML = '<option value="">检测失败，请重试</option>';
+        }
+    }
+
+    async loadCompFiles() {
+        const container = document.getElementById('compFileList');
+        try {
+            const res = await fetch('/api/storage/files');
+            const files = await res.json();
+            if (!Array.isArray(files) || files.length === 0) {
+                container.innerHTML = '<span class="text-muted">服务器没有文件</span>';
+                return;
+            }
+            container.innerHTML = '';
+            files.forEach(f => {
+                const div = document.createElement('label');
+                div.className = 'comp-file-item';
+                const sizeMB = (f.size / 1024 / 1024).toFixed(1);
+                div.innerHTML = `
+                    <input type="checkbox" value="${this._escapeHtml(f.name)}" onchange="manager._updateExportBtn()">
+                    <span>${this._escapeHtml(f.name)}</span>
+                    <span class="file-size">${sizeMB} MB</span>
+                `;
+                container.appendChild(div);
+            });
+        } catch (e) {
+            container.innerHTML = '<span class="text-muted">加载失败</span>';
+        }
+    }
+
+    _updateExportBtn() {
+        const drive = document.getElementById('compDriveSelect').value;
+        const checked = document.querySelectorAll('#compFileList input[type="checkbox"]:checked');
+        const btn = document.getElementById('compExportBtn');
+        btn.disabled = !drive || checked.length === 0;
+    }
+
+    toggleAllCompFiles() {
+        const checkboxes = document.querySelectorAll('#compFileList input[type="checkbox"]');
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => { cb.checked = !allChecked; });
+        this._updateExportBtn();
+    }
+
+    async exportToSD() {
+        const drive = document.getElementById('compDriveSelect').value;
+        const checkboxes = document.querySelectorAll('#compFileList input[type="checkbox"]:checked');
+        const filenames = Array.from(checkboxes).map(cb => cb.value);
+        const resultEl = document.getElementById('compExportResult');
+        const btn = document.getElementById('compExportBtn');
+
+        const targetPath = this._getExportPathSetting();
+
+        btn.disabled = true;
+        btn.textContent = '导出中...';
+        resultEl.style.display = 'block';
+        resultEl.className = 'comp-export-result';
+        resultEl.innerHTML = '正在导出文件到 SD 卡...';
+
+        try {
+            const res = await fetch('/api/competition/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ drive, filenames, target_path: targetPath }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                let html = `<strong>${data.message}</strong> (${data.total_size_mb} MB)`;
+                if (data.copied.length > 0) {
+                    html += '<ul class="result-list">';
+                    data.copied.forEach(f => {
+                        html += `<li>✓ ${f.name} (${f.size_mb} MB)</li>`;
+                    });
+                    html += '</ul>';
+                }
+                if (data.failed.length > 0) {
+                    html += '<ul class="result-list">';
+                    data.failed.forEach(f => {
+                        html += `<li>✗ ${f.name}: ${f.reason}</li>`;
+                    });
+                    html += '</ul>';
+                }
+                resultEl.innerHTML = html;
+                resultEl.className = 'comp-export-result success';
+                resultEl.innerHTML += `<p style="margin-top:8px;font-size:11px;">文件已导出到: ${data.export_dir}</p>`;
+                this.showToast('导出完成', 'success');
+            } else {
+                resultEl.innerHTML = `导出失败: ${data.message}`;
+                resultEl.className = 'comp-export-result error';
+                this.showToast('导出失败', 'error');
+            }
+        } catch (e) {
+            resultEl.innerHTML = '导出失败: 网络错误';
+            resultEl.className = 'comp-export-result error';
+            this.showToast('导出失败', 'error');
+        }
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>导出到 SD 卡`;
+    }
+
+    async runHealthCheck() {
+        const resultEl = document.getElementById('compHealthResult');
+        const btn = document.getElementById('compHealthBtn');
+        btn.disabled = true;
+        resultEl.innerHTML = '检查中...';
+        try {
+            const res = await fetch('/api/competition/health');
+            const data = await res.json();
+            let html = `<p style="margin-bottom:8px;"><strong>打印机:</strong> ${data.healthy_printers}/${data.total_printers} 正常 | <strong>服务器文件:</strong> ${data.storage_files} 个</p>`;
+            data.printers.forEach(p => {
+                const statusClass = p.healthy ? 'healthy' : 'unhealthy';
+                const statusText = p.healthy ? '正常' : '异常';
+                html += `<div class="health-item">
+                    <span class="health-status ${statusClass}"></span>
+                    <span>${p.name}</span>
+                    <span class="health-detail">${statusText}${p.issues.length > 0 ? ': ' + p.issues.join(', ') : ''}</span>
+                </div>`;
+            });
+            resultEl.innerHTML = html;
+        } catch (e) {
+            resultEl.innerHTML = '检查失败: 网络错误';
+        }
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>开始检查`;
+    }
+
+    saveChecklist() {
+        const checkboxes = document.querySelectorAll('#compChecklist input[type="checkbox"]');
+        const state = [];
+        checkboxes.forEach((cb, i) => { state.push(cb.checked); });
+        try {
+            localStorage.setItem('xploreprint_checklist', JSON.stringify(state));
+        } catch (e) { /* ignore */ }
+    }
+
+    loadChecklist() {
+        try {
+            const state = JSON.parse(localStorage.getItem('xploreprint_checklist'));
+            if (!state) return;
+            const checkboxes = document.querySelectorAll('#compChecklist input[type="checkbox"]');
+            checkboxes.forEach((cb, i) => {
+                if (i < state.length) cb.checked = state[i];
+            });
+        } catch (e) { /* ignore */ }
+    }
+
+    _escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // ==================== 工具箱 ====================
+
+    _toolboxCurrentPath = '/';
+
+    _getDefaultToolboxTree() {
+        return {
+            type: 'folder',
+            name: '根目录',
+            children: [
+                {
+                    type: 'folder',
+                    name: '打印机',
+                    children: [
+                        { type: 'link', name: 'Bambu Wiki - H2S', url: 'https://wiki.bambulab.com/zh/h2s' },
+                        { type: 'link', name: 'Bambu Wiki - P2P', url: 'https://wiki.bambulab.com/zh/p2s' },
+                        { type: 'link', name: 'Bambu Wiki - A1', url: 'https://wiki.bambulab.com/zh/a1' },
+                        { type: 'link', name: 'Bambu Wiki - P1P/P1S', url: 'https://wiki.bambulab.com/zh/p1' },
+                        { type: 'link', name: 'Bambu Wiki - X1', url: 'https://wiki.bambulab.com/zh/x1' },
+                    ]
+                }
+            ]
+        };
+    }
+
+    _getToolboxTree() {
+        try {
+            const saved = localStorage.getItem('xploreprint_toolbox_tree');
+            if (saved) {
+                const tree = JSON.parse(saved);
+                return tree && tree.type === 'folder' ? tree : null;
+            }
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    _saveToolboxTree(tree) {
+        try {
+            localStorage.setItem('xploreprint_toolbox_tree', JSON.stringify(tree));
+        } catch (e) { /* ignore */ }
+    }
+
+    _ensureToolboxTree() {
+        let tree = this._getToolboxTree();
+        if (!tree) {
+            tree = this._getDefaultToolboxTree();
+            this._saveToolboxTree(tree);
+        }
+        return tree;
+    }
+
+    _findFolderByPath(tree, path) {
+        if (path === '/' || path === '') return tree;
+        const parts = path.split('/').filter(p => p);
+        let current = tree;
+        for (const part of parts) {
+            if (!current.children) return null;
+            const found = current.children.find(c => c.type === 'folder' && c.name === part);
+            if (!found) return null;
+            current = found;
+        }
+        return current;
+    }
+
+    _pathToFolder(path) {
+        const parts = path.split('/').filter(p => p);
+        if (parts.length === 0) return '根目录';
+        return parts[parts.length - 1];
+    }
+
+    renderToolbox() {
+        const tree = this._ensureToolboxTree();
+        const folder = this._findFolderByPath(tree, this._toolboxCurrentPath);
+        if (!folder) {
+            this._toolboxCurrentPath = '/';
+            return this.renderToolbox();
+        }
+
+        this._renderToolboxBreadcrumb();
+        document.getElementById('toolboxLinkFolder').value = this._toolboxCurrentPath || '/';
+
+        const container = document.getElementById('toolboxGrid');
+        const query = (document.getElementById('toolboxSearch')?.value || '').trim().toLowerCase();
+        container.innerHTML = '';
+
+        const items = folder.children || [];
+        const filtered = query
+            ? this._searchToolboxItems(tree, query)
+            : items;
+
+        if (query) {
+            this._renderToolboxBreadcrumbSearch(query);
+        }
+
+        if (filtered.length === 0) {
+            container.innerHTML = `<div class="toolbox-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:48px;height:48px;margin:0 auto 12px;">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                ${query ? '没有匹配的结果' : '此文件夹为空'}
+            </div>`;
+            return;
+        }
+
+        const sorted = [...filtered].sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        sorted.forEach((item) => {
+            const div = document.createElement('div');
+            div.className = 'toolbox-item' + (item.type === 'folder' ? ' folder' : '');
+
+            let iconHtml = '';
+            if (item.type === 'folder') {
+                const count = (item.children || []).length;
+                iconHtml = `<div class="toolbox-item-icon folder">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                </div>`;
+                div.onclick = () => this.enterToolboxFolder(this._toolboxCurrentPath + (this._toolboxCurrentPath === '/' ? '' : '/') + item.name);
+            } else {
+                const isWiki = item.name.toLowerCase().includes('wiki');
+                const iconClass = isWiki ? 'wiki' : 'link';
+                const initial = (item.name.match(/[A-Za-z\u4e00-\u9fff]/) || ['T'])[0];
+                iconHtml = `<div class="toolbox-item-icon ${iconClass}">${initial}</div>`;
+                div.style.cursor = 'pointer';
+                div.onclick = () => window.open(item.url, '_blank');
+            }
+
+            const subText = item.type === 'folder'
+                ? `${(item.children || []).length} 项`
+                : (item.url || '').replace(/^https?:\/\//, '').replace(/^www\./, '');
+
+            div.innerHTML = `
+                ${iconHtml}
+                <div class="toolbox-item-info">
+                    <div class="toolbox-item-name">${this._escapeHtml(item.name)}</div>
+                    <div class="toolbox-item-sub">${this._escapeHtml(subText)}</div>
+                </div>
+                <div class="toolbox-item-actions" onclick="event.stopPropagation();">
+                    <button class="toolbox-item-delete" title="删除" onclick="manager.deleteToolboxItem('${this._escapeHtml(item.name)}')">×</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    _searchToolboxItems(tree, query) {
+        const results = [];
+        const walk = (node, path) => {
+            if (!node || !node.children) return;
+            for (const child of node.children) {
+                const childPath = path + '/' + child.name;
+                if (child.name.toLowerCase().includes(query) || (child.url && child.url.toLowerCase().includes(query))) {
+                    results.push({ ...child, _path: childPath });
+                }
+                if (child.type === 'folder') {
+                    walk(child, childPath);
+                }
+            }
+        };
+        walk(tree, '');
+        return results;
+    }
+
+    _renderToolboxBreadcrumb() {
+        const container = document.getElementById('toolboxBreadcrumb');
+        const parts = this._toolboxCurrentPath.split('/').filter(p => p);
+        let html = '';
+        let accumulated = '';
+        html += `<span class="breadcrumb-item${this._toolboxCurrentPath === '/' ? ' current' : ''}" data-path="/" onclick="manager.enterToolboxFolder('/')">根目录</span>`;
+        for (const part of parts) {
+            accumulated += '/' + part;
+            html += `<span class="breadcrumb-sep">/</span>`;
+            const isLast = accumulated === this._toolboxCurrentPath;
+            html += `<span class="breadcrumb-item${isLast ? ' current' : ''}" data-path="${accumulated}" onclick="manager.enterToolboxFolder('${accumulated}')">${this._escapeHtml(part)}</span>`;
+        }
+        container.innerHTML = html;
+    }
+
+    _renderToolboxBreadcrumbSearch(query) {
+        const container = document.getElementById('toolboxBreadcrumb');
+        container.innerHTML = `<span class="breadcrumb-item current">搜索: "${this._escapeHtml(query)}"</span>
+            <span class="breadcrumb-item" onclick="manager.clearToolboxSearch()" style="color:var(--accent-blue);">✕ 清除</span>`;
+    }
+
+    enterToolboxFolder(path) {
+        this._toolboxCurrentPath = path;
+        document.getElementById('toolboxSearch').value = '';
+        this.renderToolbox();
+    }
+
+    onToolboxSearch() {
+        this.renderToolbox();
+    }
+
+    clearToolboxSearch() {
+        document.getElementById('toolboxSearch').value = '';
+        this.renderToolbox();
+    }
+
+    openAddToolboxLinkModal() {
+        document.getElementById('toolboxLinkFolder').value = this._toolboxCurrentPath || '/';
+        document.getElementById('toolboxLinkModal').classList.add('active');
+    }
+
+    addToolboxLink(event) {
+        if (event) event.preventDefault();
+        const name = document.getElementById('toolboxLinkName').value.trim();
+        let url = document.getElementById('toolboxLinkUrl').value.trim();
+        const folderPath = document.getElementById('toolboxLinkFolder').value;
+
+        if (!name || !url) {
+            this.showToast('请填写名称和链接', 'error');
+            return;
+        }
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            url = 'https://' + url;
+        }
+
+        const tree = this._ensureToolboxTree();
+        const folder = this._findFolderByPath(tree, folderPath);
+        if (!folder) {
+            this.showToast('目标文件夹不存在', 'error');
+            return;
+        }
+        if (!folder.children) folder.children = [];
+
+        const exists = folder.children.some(c => c.type === 'link' && c.name === name);
+        if (exists) {
+            this.showToast('该名称已存在', 'error');
+            return;
+        }
+
+        folder.children.push({ type: 'link', name, url });
+        this._saveToolboxTree(tree);
+        this.renderToolbox();
+        closeToolboxLinkModal();
+        this.showToast('添加成功', 'success');
+    }
+
+    createToolboxFolder() {
+        const name = prompt('输入文件夹名称:');
+        if (!name || !name.trim()) return;
+        const trimmed = name.trim();
+
+        const tree = this._ensureToolboxTree();
+        const folder = this._findFolderByPath(tree, this._toolboxCurrentPath);
+        if (!folder) return;
+        if (!folder.children) folder.children = [];
+
+        const exists = folder.children.some(c => c.type === 'folder' && c.name === trimmed);
+        if (exists) {
+            this.showToast('该文件夹已存在', 'error');
+            return;
+        }
+
+        folder.children.push({ type: 'folder', name: trimmed, children: [] });
+        this._saveToolboxTree(tree);
+        this.renderToolbox();
+        this.showToast('文件夹已创建', 'success');
+    }
+
+    deleteToolboxItem(name) {
+        if (!confirm(`确定删除 "${name}" 吗？如果是文件夹，其中的所有内容也会被删除。`)) return;
+        const tree = this._ensureToolboxTree();
+        const folder = this._findFolderByPath(tree, this._toolboxCurrentPath);
+        if (!folder || !folder.children) return;
+        folder.children = folder.children.filter(c => c.name !== name);
+        this._saveToolboxTree(tree);
+        this.renderToolbox();
+        this.showToast(`已删除: ${name}`, 'success');
+    }
+
+    // ==================== 设置 ====================
+
+    _getExportPathSetting() {
+        try {
+            return localStorage.getItem('xploreprint_export_path') || 'XplorePrint';
+        } catch (e) {
+            return 'XplorePrint';
+        }
+    }
+
+    loadExportPathSetting() {
+        const el = document.getElementById('exportPathSetting');
+        if (el) {
+            el.value = this._getExportPathSetting();
+        }
+    }
+
+    saveExportPathSetting() {
+        const el = document.getElementById('exportPathSetting');
+        const value = (el?.value || '').trim();
+        if (!value) {
+            this.showToast('路径不能为空', 'error');
+            return;
+        }
+        try {
+            localStorage.setItem('xploreprint_export_path', value);
+            this.showToast('导出路径已保存', 'success');
+        } catch (e) {
+            this.showToast('保存失败', 'error');
+        }
+    }
 }
 
 const manager = new PrinterApp();
@@ -3093,6 +3590,11 @@ function showAddPrinterModal() {
 function closeAddPrinterModal() {
     document.getElementById('addPrinterModal').classList.remove('active');
     document.getElementById('addPrinterForm').reset();
+}
+
+function closeToolboxLinkModal() {
+    document.getElementById('toolboxLinkModal').classList.remove('active');
+    document.getElementById('toolboxLinkForm').reset();
 }
 
 function addPrinter(event) {

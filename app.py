@@ -781,6 +781,122 @@ def remove_competition(comp_id):
     return jsonify({"status": "ok"})
 
 
+# ==================== 赛场工具 API ====================
+
+@app.route("/api/competition/drives", methods=["GET"])
+def get_drives():
+    import subprocess
+    import json as _json
+    try:
+        result = subprocess.run(
+            [
+                "powershell", "-NoProfile", "-Command",
+                "Get-WmiObject Win32_LogicalDisk -Filter 'DriveType=2' | "
+                "Select-Object DeviceID, VolumeName, "
+                "@{N='FreeSpaceGB';E={[math]::Round($_.FreeSpace/1GB,1)}}, "
+                "@{N='SizeGB';E={[math]::Round($_.Size/1GB,1)}} | "
+                "ConvertTo-Json"
+            ],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return jsonify({"success": False, "message": "驱动器检测失败", "drives": []})
+        raw = result.stdout.strip()
+        if not raw:
+            drives = []
+        else:
+            parsed = _json.loads(raw)
+            drives = [parsed] if isinstance(parsed, dict) else parsed
+        return jsonify({"success": True, "drives": drives})
+    except Exception as e:
+        logger.error(f"Failed to detect drives: {e}")
+        return jsonify({"success": False, "message": str(e), "drives": []})
+
+
+@app.route("/api/competition/export", methods=["POST"])
+def export_to_sd():
+    import shutil
+    import os as _os
+    data = request.json
+    drive = data.get("drive", "")
+    filenames = data.get("filenames", [])
+    target_path = data.get("target_path", "").strip().strip("\\").strip("/")
+
+    if not drive:
+        return jsonify({"success": False, "message": "未选择目标驱动器"}), 400
+    if not filenames:
+        return jsonify({"success": False, "message": "未选择文件"}), 400
+    if not _os.path.exists(drive):
+        return jsonify({"success": False, "message": f"驱动器 {drive} 不存在"}), 404
+
+    if target_path:
+        export_dir = _os.path.join(drive, target_path)
+    else:
+        export_dir = drive.rstrip("\\") + "\\"
+    _os.makedirs(export_dir, exist_ok=True)
+
+    copied = []
+    failed = []
+    total_size = 0
+
+    for fname in filenames:
+        src = _os.path.join(STORAGE_DIR, _os.path.basename(fname))
+        dst = _os.path.join(export_dir, _os.path.basename(fname))
+        if not _os.path.exists(src):
+            failed.append({"name": fname, "reason": "源文件不存在"})
+            continue
+        try:
+            shutil.copy2(src, dst)
+            fsize = _os.path.getsize(dst)
+            total_size += fsize
+            copied.append({"name": fname, "size_mb": round(fsize / 1024 / 1024, 2)})
+            logger.info(f"Exported {fname} to {drive}")
+        except Exception as e:
+            failed.append({"name": fname, "reason": str(e)})
+            logger.error(f"Export failed: {fname} -> {drive}: {e}")
+
+    return jsonify({
+        "success": True,
+        "export_dir": export_dir,
+        "copied": copied,
+        "failed": failed,
+        "total_size_mb": round(total_size / 1024 / 1024, 2),
+        "message": f"导出完成: {len(copied)} 成功, {len(failed)} 失败",
+    })
+
+
+@app.route("/api/competition/health", methods=["GET"])
+def competition_health_check():
+    results = []
+    printers = manager.get_all_printer_data()
+    for p in printers:
+        issues = []
+        if p.get("status") == "offline":
+            issues.append("打印机离线")
+        if p.get("hms_code", 0) != 0:
+            issues.append(f"HMS 错误: {p.get('hms_code')}")
+        if p.get("status") == "error":
+            issues.append("打印机报错")
+        results.append({
+            "name": p.get("name", "Unknown"),
+            "status": p.get("status", "offline"),
+            "healthy": len(issues) == 0,
+            "issues": issues,
+            "nozzle_temp": p.get("nozzle_temp", 0),
+            "bed_temp": p.get("bed_temp", 0),
+            "print_progress": p.get("print_progress", 0),
+        })
+
+    storage_files = len(os.listdir(STORAGE_DIR)) if os.path.exists(STORAGE_DIR) else 0
+    return jsonify({
+        "success": True,
+        "printers": results,
+        "storage_files": storage_files,
+        "total_printers": len(results),
+        "healthy_printers": sum(1 for r in results if r["healthy"]),
+    })
+
+
 @socketio.on("connect")
 def handle_connect():
     socketio.emit("printer_update", manager.get_all_printer_data())

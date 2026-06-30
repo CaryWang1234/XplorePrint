@@ -117,6 +117,26 @@
                     </svg>
                     <span>文件管理</span>
                 </a>
+                <a href="#" class="nav-item" data-view="competition">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                        <path d="M2 17l10 5 10-5"/>
+                        <path d="M2 12l10 5 10-5"/>
+                    </svg>
+                    <span>赛场工具</span>
+                </a>
+                <a href="#" class="nav-item" data-view="toolbox">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14.7 6.3a1 1 0 000-1.4l-1.5-1.5a1 1 0 00-1.4 0l-3.5 3.5a1 1 0 000 1.4l1.5 1.5a1 1 0 001.4 0l3.5-3.5z"/>
+                        <path d="M6.5 10.5l-3 3a1 1 0 000 1.4l2.5 2.5a1 1 0 001.4 0l3-3"/>
+                        <path d="M8.5 8.5l-2.2 2.2"/>
+                        <path d="M17.5 17.5l-2.2-2.2"/>
+                        <path d="M10.5 6.5l-2.2 2.2"/>
+                        <path d="M13.5 13.5l3-3a1 1 0 000-1.4l-2.5-2.5a1 1 0 00-1.4 0l-3 3"/>
+                        <path d="M15.5 17.5l3.5-3.5a1 1 0 000-1.4l-1.5-1.5a1 1 0 00-1.4 0l-3.5 3.5a1 1 0 000 1.4l1.5 1.5a1 1 0 001.4 0z"/>
+                    </svg>
+                    <span>工具箱</span>
+                </a>
                 <a href="#" class="nav-item" data-view="settings">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"/>
@@ -563,6 +583,19 @@
                     </div>
 
                     <div class="settings-card">
+                        <h3>SD 卡导出</h3>
+                        <p class="settings-desc">设置文件导出到 SD 卡时的目标文件夹路径</p>
+                        <div class="form-group">
+                            <label>导出目标路径</label>
+                            <div class="export-path-input">
+                                <input type="text" class="form-input" id="exportPathSetting" placeholder="XplorePrint" value="XplorePrint">
+                                <button class="btn btn-sm btn-outline" onclick="manager.saveExportPathSetting()">保存</button>
+                            </div>
+                            <span class="form-hint">文件将导出到 SD 卡:\<此路径>\ 目录下。留空表示直接导出到 SD 卡根目录</span>
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
                         <h3>系统日志</h3>
                         <p class="settings-desc">查看最近日志或导出完整日志文件用于调试</p>
                         <div class="log-actions">
@@ -607,7 +640,183 @@
                     </div>
                 </div>
             </section>
+
+            <!-- Competition Tools View -->
+            <section id="competitionView" class="view">
+                <header class="page-header">
+                    <h2>赛场工具</h2>
+                    <span class="page-header-badge">FRC Competition</span>
+                </header>
+                <div class="competition-grid">
+                    <!-- SD Card Export -->
+                    <div class="comp-card">
+                        <div class="comp-card-header">
+                            <div class="comp-card-icon" style="background:rgba(245,158,11,0.12);color:var(--amber);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                    <polyline points="7 10 12 15 17 10"/>
+                                    <line x1="12" y1="15" x2="12" y2="3"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3>SD 卡导出</h3>
+                                <p class="comp-card-desc">将 GCode 文件快速刷入 SD 卡，适用于赛场无网络环境</p>
+                            </div>
+                        </div>
+                        <div class="comp-card-body">
+                            <div class="form-group">
+                                <label>目标 SD 卡</label>
+                                <div class="sd-drive-selector">
+                                    <select class="form-input" id="compDriveSelect">
+                                        <option value="">检测 SD 卡中...</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-outline" onclick="manager.refreshDrives()" title="刷新">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+                                    </button>
+                                </div>
+                                <div class="sd-drive-info" id="compDriveInfo" style="display:none;"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>选择文件导出</label>
+                                <div class="comp-file-list" id="compFileList">
+                                    <span class="text-muted">加载中...</span>
+                                </div>
+                            </div>
+                            <div class="comp-export-actions">
+                                <button class="btn btn-outline btn-sm" onclick="manager.toggleAllCompFiles()">全选 / 取消</button>
+                                <button class="btn btn-primary btn-sm" id="compExportBtn" onclick="manager.exportToSD()" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    导出到 SD 卡
+                                </button>
+                            </div>
+                            <div class="comp-export-result" id="compExportResult" style="display:none;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Health Check -->
+                    <div class="comp-card">
+                        <div class="comp-card-header">
+                            <div class="comp-card-icon" style="background:rgba(16,185,129,0.12);color:var(--green);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;">
+                                    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/>
+                                    <polyline points="22 4 12 14.01 9 11.01"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3>赛前检查</h3>
+                                <p class="comp-card-desc">比赛前快速检查打印机状态和文件准备情况</p>
+                            </div>
+                        </div>
+                        <div class="comp-card-body">
+                            <button class="btn btn-primary btn-sm" onclick="manager.runHealthCheck()" id="compHealthBtn">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                开始检查
+                            </button>
+                            <div class="comp-health-result" id="compHealthResult">
+                                <span class="text-muted">点击按钮开始检查...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Competition Checklist -->
+                    <div class="comp-card comp-card-full">
+                        <div class="comp-card-header">
+                            <div class="comp-card-icon" style="background:rgba(59,130,246,0.12);color:var(--accent-blue);">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px;">
+                                    <line x1="8" y1="6" x2="21" y2="6"/>
+                                    <line x1="8" y1="12" x2="21" y2="12"/>
+                                    <line x1="8" y1="18" x2="21" y2="18"/>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"/>
+                                    <line x1="3" y1="12" x2="3.01" y2="12"/>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h3>赛场清单</h3>
+                                <p class="comp-card-desc">出发前检查清单，确保所有设备和耗材准备就绪</p>
+                            </div>
+                        </div>
+                        <div class="comp-card-body">
+                            <div class="checklist" id="compChecklist">
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 打印机已打包并固定好</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 备用喷嘴（0.4mm / 0.6mm）</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> PLA / PETG / TPU 耗材各 2 卷以上</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> SD 卡已导出所需 GCode 文件</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 笔记本电脑 + 充电器</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 胶棒 / 喷雾胶 / 刮刀 / 钳子</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 备用 PTFE 管 + 接头</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 电源线 + 延长线</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 网络交换机 + 网线</label>
+                                <label class="checklist-item"><input type="checkbox" onchange="manager.saveChecklist()"> 备件（热端、风扇、皮带）</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Toolbox View -->
+            <section id="toolboxView" class="view">
+                <header class="page-header">
+                    <div>
+                        <h2>工具箱</h2>
+                        <div class="toolbox-breadcrumb" id="toolboxBreadcrumb">
+                            <span class="breadcrumb-item current" data-path="/" onclick="manager.enterToolboxFolder('/')">根目录</span>
+                        </div>
+                    </div>
+                    <span class="page-header-badge" style="background:var(--green);">Wiki & Tools</span>
+                </header>
+                <div class="toolbox-search-bar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--text-muted);">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input type="text" class="toolbox-search-input" id="toolboxSearch" placeholder="搜索文件夹或链接..." oninput="manager.onToolboxSearch()">
+                </div>
+                <div class="toolbox-actions">
+                    <button class="btn btn-outline btn-sm" onclick="manager.createToolboxFolder()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                        新建文件夹
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="manager.openAddToolboxLinkModal()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        添加链接
+                    </button>
+                </div>
+                <div class="toolbox-grid" id="toolboxGrid">
+                    <span class="text-muted">加载中...</span>
+                </div>
+            </section>
+
         </main>
+    </div>
+
+    <!-- Add Toolbox Link Modal -->
+    <div class="modal-overlay" id="toolboxLinkModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>添加链接</h3>
+                <button class="modal-close" onclick="closeToolboxLinkModal()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <form id="toolboxLinkForm" onsubmit="manager.addToolboxLink(event)">
+                <div class="form-group">
+                    <label>名称 *</label>
+                    <input type="text" class="form-input" id="toolboxLinkName" placeholder="例如: Bambu Wiki - X1" required>
+                </div>
+                <div class="form-group">
+                    <label>链接地址 *</label>
+                    <input type="url" class="form-input" id="toolboxLinkUrl" placeholder="https://..." required>
+                </div>
+                <div class="form-group">
+                    <label>保存到文件夹</label>
+                    <input type="text" class="form-input" id="toolboxLinkFolder" readonly value="/">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-outline" onclick="closeToolboxLinkModal()">取消</button>
+                    <button type="submit" class="btn btn-primary">添加</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <!-- Add Printer Modal -->
