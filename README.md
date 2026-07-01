@@ -2,7 +2,7 @@
 
 **FRC Team 11019 Xplore — 3D 打印机管理软件**
 
-专为 FRC 队伍设计的 Bambu Lab 拓竹 3D 打印机集中管理平台，基于官方 `bambulabs_api` 库，提供实时监控、打印队列、耗材库存、FRC 零件管理、赛场工具、工具箱等功能。
+专为 FRC 队伍设计的 Bambu Lab 拓竹 3D 打印机集中管理平台，基于官方 `bambulabs_api` 库，提供实时监控、打印队列、耗材库存、FRC 零件管理、赛场工具、工具箱等功能。同生态还包含 **G3D（Git for 3D Prints）** 子功能，一个 GitHub 风格的 3D 打印件和 CAD 文件版本控制平台。
 
 ---
 
@@ -116,6 +116,25 @@
 - **路径搜索**：递归搜索所有文件夹和链接的名称/URL
 - **数据持久化**：树结构和链接保存到 `localStorage`
 
+### G3D — Git for 3D Prints
+- **版本控制**：类似 GitHub 的项目管理平台，专为 3D 打印件和 CAD 文件设计
+- **项目创建/编辑/删除**：支持项目名称、描述、可见性（Public/Private）
+- **文件暂存与提交**：拖拽上传 → 暂存区 → 填写 commit message → 提交
+- **提交历史**：时间线展示完整提交记录，支持查看每次提交的文件
+- **文件管理**：文件列表浏览、下载、单独删除
+- **README 文档**：Markdown 编辑器，支持标题、粗体、斜体、列表、代码块
+- **装配体信息**：记录装配体名称、零件清单、备注说明
+- **标签系统**：项目标签（添加/删除），支持按标签筛选
+- **搜索过滤**：实时搜索项目名称和描述
+- **统计栏**：文件数、提交数、分支、更新时间
+- **支持格式**：`.stl` `.3mf` `.step` `.stp` `.gcode` `.f3d` `.scad` `.obj` `.amf` `.glb` `.gltf` `.sldprt` `.sldasm`
+- **管理员密钥保护**：删除项目/文件/提交需输入管理员密钥，密钥以加盐 SHA-256 哈希存储，源码泄露也无法还原
+
+### 安全机制
+- **管理员密钥**：所有破坏性操作（删除项目/文件/提交）需输入密钥验证
+- **加盐哈希存储**：密钥明文不存储于源码，仅保留 `SHA-256(key + salt)` 哈希值
+- **密钥管理工具**：`python set_admin_key.py` 交互式修改密钥，自动更新哈希值
+
 ### 系统日志
 - **彩色控制台输出**：DEBUG(灰) / INFO(绿) / WARNING(黄) / ERROR(红) / CRITICAL(红底白字)
 - **文件日志**：自动写入 `data/logs/xploreprint.log`，轮转备份（5MB × 5 文件）
@@ -183,12 +202,21 @@ python app.py
 XplorePrint/
 ├── app.py                          # Flask 主应用 + API 路由
 ├── server_control.bat              # Windows 服务器管理工具（启动/停止/重启/打开浏览器）
+├── set_admin_key.py                # 管理员密钥设置工具
 ├── config.json                     # 打印机配置
 ├── requirements.txt                # Python 依赖
 ├── data/                           # 持久化数据目录
 │   ├── logs/
 │   │   └── xploreprint.log         # 应用日志（轮转备份）
 │   ├── storage/                    # 服务器文件仓库
+│   ├── g3d/                        # G3D 项目数据
+│   │   ├── projects.json           # 项目元数据
+│   │   └── <project_id>/           # 各项目数据目录
+│   │       ├── latest/             # 当前文件
+│   │       ├── <commit_id>/        # 各次提交的文件
+│   │       ├── staging/            # 暂存区文件
+│   │       ├── commits.json        # 提交历史
+│   │       └── assembly.json       # 装配体信息
 │   ├── queue_files/                # 打印队列文件缓存
 │   ├── history.json                # 打印历史
 │   ├── queue.json                  # 打印队列
@@ -199,9 +227,10 @@ XplorePrint/
 │   └── ams_cache.json              # AMS 数据缓存
 ├── printermanager/
 │   ├── __init__.py
-│   ├── models.py                   # 数据模型（Printer, QueueItem, FilamentStock 等）
+│   ├── models.py                   # 数据模型（Printer, QueueItem, FilamentStock, G3DProject 等）
 │   ├── bambu_client.py             # bambulabs_api 封装（MQTT/FTPS/RTSP）
-│   └── printermanager.py           # 核心管理器（连接、队列、历史、库存、FRC）
+│   ├── printermanager.py           # 核心管理器（连接、队列、历史、库存、FRC）
+│   └── g3d_manager.py              # G3D 版本控制管理器
 └── web/
     ├── templates/
     │   └── index.html              # 主页面模板
@@ -264,6 +293,24 @@ XplorePrint/
 |------|------|------|
 | GET | `/api/logs/view?lines=200` | 查看最近 N 行日志 |
 | GET | `/api/logs/download` | 下载完整日志文件 |
+
+### G3D — Git for 3D Prints
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/g3d/projects` | 获取所有项目列表 |
+| POST | `/api/g3d/projects` | 创建新项目 |
+| PUT | `/api/g3d/projects/<id>` | 更新项目信息 |
+| DELETE | `/api/g3d/projects/<id>` | 删除项目（需管理员密钥） |
+| GET | `/api/g3d/projects/<id>` | 获取项目详情 |
+| GET | `/api/g3d/projects/<id>/commits` | 获取提交历史 |
+| POST | `/api/g3d/projects/<id>/upload` | 上传文件到暂存区 |
+| POST | `/api/g3d/projects/<id>/stage` | 添加文件到暂存区 |
+| POST | `/api/g3d/projects/<id>/commit` | 提交暂存区文件 |
+| DELETE | `/api/g3d/projects/<id>/commits/<commit_hash>` | 删除提交（需管理员密钥） |
+| DELETE | `/api/g3d/projects/<id>/files/<filename>` | 删除文件（需管理员密钥） |
+| POST | `/api/g3d/projects/<id>/assembly` | 更新装配体信息 |
+| POST | `/api/g3d/projects/<id>/tags` | 添加/删除标签 |
+| GET | `/api/g3d/stats` | 获取 G3D 全局统计 |
 
 ### 其他
 | 方法 | 路径 | 说明 |
