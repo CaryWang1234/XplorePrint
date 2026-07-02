@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/**
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/**
  * XplorePrint - Main Application JavaScript
  * FRC Team 11019 Xplore
  * 3D Printer Management Software
@@ -17,10 +17,14 @@ class PrinterApp {
     }
 
     init() {
+        this._inspectHistory = [];
+        this._inspectTab = 'snapshot';
+        this.loadTheme();
         this.loadSettings();
         this.bindNavigation();
         this.bindSocket();
         this.loadPrinters();
+        this._bindInspectUpload();
         setInterval(() => this.loadStats(), 5000);
         setInterval(() => this.refreshAMSData(), 10000);
         setTimeout(() => this.hideLoadingScreen(), 8000);
@@ -177,6 +181,38 @@ class PrinterApp {
         });
 
         Object.values(existingCards).forEach(c => c.remove());
+
+        this.checkCVHealth();
+        this._updateInspectPrinterSelect();
+    }
+
+    _updateInspectPrinterSelect() {
+        const sel = document.getElementById('inspectPrinterSelect');
+        if (!sel) return;
+        const current = sel.value;
+        sel.innerHTML = '<option value="">-- 选择打印机 --</option>';
+        this.printers.forEach(p => {
+            sel.innerHTML += `<option value="${p.id}">${p.name} (${p.status || 'offline'})</option>`;
+        });
+        if (current) sel.value = current;
+        this.onInspectPrinterChange();
+    }
+
+    _bindInspectUpload() {
+        const zone = document.getElementById('inspectUploadZone');
+        const input = document.getElementById('inspectFileInput');
+        if (!zone || !input) return;
+        zone.addEventListener('click', () => input.click());
+        zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = 'var(--accent-blue)'; });
+        zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
+        zone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zone.style.borderColor = '';
+            if (e.dataTransfer.files.length) {
+                input.files = e.dataTransfer.files;
+                this.inspectPageUpload();
+            }
+        });
     }
 
     createPrinterCard(printer) {
@@ -228,7 +264,7 @@ class PrinterApp {
                         </span>
                         <span class="ams-temp" title="AMS 温度">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path d="M14 14.76V3.5a2.5 2.5 0 00-5 0v11.26a4.5 4.5 0 105 0z"/></svg>
-                            ${temp.toFixed(1)}°C
+                            ${manager._formatTemp(temp)}
                         </span>
                     </div>
                     <div class="ams-trays">
@@ -344,19 +380,28 @@ class PrinterApp {
                         <span>等待视频流...</span>
                     </div>
                 </div>
+                <div class="video-inspect-area">
+                    <button class="btn btn-sm btn-outline btn-inspect" onclick="manager.inspectPrint('${printer.id}')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        打印质检
+                    </button>
+                    <span class="cv-health-dot" id="cv-health-${printer.id}" title="CV 模型状态">●</span>
+                    <span class="inspect-status" id="inspect-status-${printer.id}"></span>
+                </div>
+                <div class="inspect-result" id="inspect-result-${printer.id}" style="display:none;"></div>
             </div>
             <div class="temp-grid">
                 <div class="temp-item">
                     <span class="temp-label">喷头</span>
-                    <span class="temp-value">${printer.nozzle_temp}°C <span class="temp-target">/ ${printer.target_nozzle_temp}°C</span></span>
+                    <span class="temp-value">${this._formatTempInt(printer.nozzle_temp)} <span class="temp-target">/ ${this._formatTempInt(printer.target_nozzle_temp)}</span></span>
                 </div>
                 <div class="temp-item">
                     <span class="temp-label">热床</span>
-                    <span class="temp-value">${printer.bed_temp}°C <span class="temp-target">/ ${printer.target_bed_temp}°C</span></span>
+                    <span class="temp-value">${this._formatTempInt(printer.bed_temp)} <span class="temp-target">/ ${this._formatTempInt(printer.target_bed_temp)}</span></span>
                 </div>
                 <div class="temp-item">
                     <span class="temp-label">腔体</span>
-                    <span class="temp-value">${printer.chamber_temp}°C</span>
+                    <span class="temp-value">${this._formatTempInt(printer.chamber_temp)}</span>
                 </div>
                 <div class="temp-item">
                     <span class="temp-label">层数</span>
@@ -1935,6 +1980,62 @@ class PrinterApp {
 
     // ==================== 设置 ====================
 
+    async loadTheme() {
+        try {
+            const res = await fetch('/api/theme');
+            const data = await res.json();
+            this._theme = data.theme || 'auto';
+        } catch (e) {
+            this._theme = 'auto';
+        }
+        this.applyTheme(this._theme);
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (this._theme === 'auto') this.applyTheme('auto');
+        });
+    }
+
+    applyTheme(theme) {
+        if (theme === 'auto') {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', theme);
+        }
+        const sel = document.getElementById('settingTheme');
+        if (sel) sel.value = theme;
+        this._theme = theme;
+    }
+
+    _formatTemp(celsius) {
+        if (celsius == null || isNaN(celsius)) return '--';
+        const unit = this._settings?.tempUnit || 'celsius';
+        if (unit === 'fahrenheit') {
+            return (celsius * 9 / 5 + 32).toFixed(1) + '°F';
+        }
+        return celsius.toFixed(1) + '°C';
+    }
+
+    _formatTempInt(celsius) {
+        if (celsius == null || isNaN(celsius)) return '--';
+        const unit = this._settings?.tempUnit || 'celsius';
+        if (unit === 'fahrenheit') {
+            return Math.round(celsius * 9 / 5 + 32) + '°F';
+        }
+        return Math.round(celsius) + '°C';
+    }
+
+    async setTheme(theme) {
+        this.applyTheme(theme);
+        try {
+            await fetch('/api/theme', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme })
+            });
+        } catch (e) { /* ignore */ }
+        this.showToast('主题已保存', 'success');
+    }
+
     saveSetting(key, value) {
         this._settings = this._settings || {};
         this._settings[key] = value;
@@ -1942,6 +2043,8 @@ class PrinterApp {
             localStorage.setItem('xploreprint_settings', JSON.stringify(this._settings));
         } catch (e) { /* ignore */ }
         this.showToast('设置已保存', 'success');
+        if (key === 'inspectInterval') this._restartAutoInspect();
+        if (key === 'tempUnit') this.renderDashboard();
     }
 
     async viewLogs() {
@@ -1998,11 +2101,14 @@ class PrinterApp {
         }
         this._settings.toastDuration = parseInt(this._settings.toastDuration) || 3;
         this._settings.refreshInterval = parseInt(this._settings.refreshInterval) || 5;
+        this._settings.inspectInterval = parseInt(this._settings.inspectInterval) || 60;
         this._settings.tempUnit = this._settings.tempUnit || 'celsius';
         this._settings.filamentMinTemp = parseInt(this._settings.filamentMinTemp) || 190;
 
         const refreshEl = document.getElementById('settingRefreshInterval');
         if (refreshEl) refreshEl.value = this._settings.refreshInterval;
+        const inspectEl = document.getElementById('settingInspectInterval');
+        if (inspectEl) inspectEl.value = this._settings.inspectInterval;
         const tempEl = document.getElementById('settingTempUnit');
         if (tempEl) tempEl.value = this._settings.tempUnit;
         const toastEl = document.getElementById('settingToastDuration');
@@ -2013,6 +2119,8 @@ class PrinterApp {
         if (filamentMinTempInputEl) filamentMinTempInputEl.value = this._settings.filamentMinTemp;
         const filamentMinTempLabelEl = document.getElementById('settingFilamentMinTempLabel');
         if (filamentMinTempLabelEl) filamentMinTempLabelEl.textContent = this._settings.filamentMinTemp;
+
+        this._restartAutoInspect();
     }
 
     // ==================== 诊断测试 ====================
@@ -2180,7 +2288,7 @@ class PrinterApp {
                         </div>
                         <div>
                             <h4>温度控制</h4>
-                            <div class="ops-card-subtitle">当前: 喷头 ${printer.nozzle_temp}°C / 热床 ${printer.bed_temp}°C</div>
+                            <div class="ops-card-subtitle">当前: 喷头 ${this._formatTempInt(printer.nozzle_temp)} / 热床 ${this._formatTempInt(printer.bed_temp)}</div>
                         </div>
                     </div>
                     <div class="temp-control-row">
@@ -2189,7 +2297,7 @@ class PrinterApp {
                             <input type="range" id="nozzleTempSlider" min="0" max="300" oninput="document.getElementById('nozzleTempInput').value=this.value">
                             <input type="number" id="nozzleTempInput" min="0" max="300" value="${printer.nozzle_temp || 0}" oninput="document.getElementById('nozzleTempSlider').value=this.value">
                         </div>
-                        <span class="temp-control-value">°C</span>
+                        <span class="temp-control-value">${this._settings?.tempUnit === 'fahrenheit' ? '°F' : '°C'}</span>
                     </div>
                     <div class="temp-control-row">
                         <span class="temp-control-label">热床</span>
@@ -2197,7 +2305,7 @@ class PrinterApp {
                             <input type="range" id="bedTempSlider" min="0" max="120" oninput="document.getElementById('bedTempInput').value=this.value">
                             <input type="number" id="bedTempInput" min="0" max="120" value="${printer.bed_temp || 0}" oninput="document.getElementById('bedTempSlider').value=this.value">
                         </div>
-                        <span class="temp-control-value">°C</span>
+                        <span class="temp-control-value">${this._settings?.tempUnit === 'fahrenheit' ? '°F' : '°C'}</span>
                     </div>
                     <button class="btn btn-primary btn-sm temp-apply" onclick="manager.applyTemperatures()">应用温度</button>
                 </div>
@@ -2373,7 +2481,7 @@ class PrinterApp {
                         </div>
                         <div>
                             <h4>挤出机 & 进退料</h4>
-                            <div class="ops-card-subtitle">喷嘴: ${printer.nozzle_temp}°C / 目标: <span id="extruderTargetDisplay">--</span>°C</div>
+                            <div class="ops-card-subtitle">喷嘴: ${this._formatTempInt(printer.nozzle_temp)} / 目标: <span id="extruderTargetDisplay">--</span></div>
                         </div>
                     </div>
                     <div class="extruder-control-row">
@@ -2383,7 +2491,7 @@ class PrinterApp {
                                 <input type="range" id="extruderTempSlider" min="0" max="300" value="${printer.nozzle_temp || 0}" oninput="manager.updateExtruderTemp()">
                                 <input type="number" id="extruderTempInput" min="0" max="300" value="${printer.nozzle_temp || 0}" oninput="manager.updateExtruderTemp()">
                             </div>
-                            <span class="temp-control-value">°C</span>
+                            <span class="temp-control-value">${this._settings?.tempUnit === 'fahrenheit' ? '°F' : '°C'}</span>
                         </div>
                         <button class="btn btn-primary btn-sm" onclick="manager.applyExtruderTemp('${printer.id}')">加热</button>
                     </div>
@@ -2408,7 +2516,7 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;transform:rotate(180deg);"><polyline points="22 2 13.5 10.5"/><polyline points="11 13 2 22"/></svg>
                             退料
                         </button>
-                        <span class="filament-lock-hint" id="filamentLockHint">🔒 喷嘴实际温度 <b>190°C</b> 解锁</span>
+                        <span class="filament-lock-hint" id="filamentLockHint">🔒 喷嘴实际温度 <b>${this._formatTempInt(190)}</b> 解锁</span>
                     </div>
                 </div>
 
@@ -2467,7 +2575,7 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
         if (!isNaN(bedTemp)) {
             this.sendCommand(printerId, 'set_bed_temp', { temp: bedTemp });
         }
-        this.showToast(`温度已设置: 喷头 ${nozzleTemp}°C / 热床 ${bedTemp}°C`, 'info');
+        this.showToast(`温度已设置: 喷头 ${this._formatTempInt(nozzleTemp)} / 热床 ${this._formatTempInt(bedTemp)}`, 'info');
     }
 
     setFanSpeed(speed) {
@@ -2535,7 +2643,7 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
                 slider.value = input.value;
             }
             const temp = parseInt(input.value) || 0;
-            if (targetDisplay) targetDisplay.textContent = temp;
+            if (targetDisplay) targetDisplay.textContent = this._formatTempInt(temp);
         }
     }
 
@@ -2558,7 +2666,7 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
                 lockHint.innerHTML = '✅ 实际温度达标，可进退料';
                 lockHint.style.color = 'var(--accent-green)';
             } else {
-                lockHint.innerHTML = '🔒 喷嘴实际温度达到 <b>' + MIN_TEMP + '°C</b> 解锁 (当前 ' + actualTemp.toFixed(1) + '°C)';
+                lockHint.innerHTML = '🔒 喷嘴实际温度达到 <b>' + this._formatTempInt(MIN_TEMP) + '</b> 解锁 (当前 ' + this._formatTemp(actualTemp) + ')';
                 lockHint.style.color = 'var(--text-muted)';
             }
         }
@@ -2703,6 +2811,307 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
             URL.revokeObjectURL(this._videoBlobs[printerId]);
             delete this._videoBlobs[printerId];
         }
+    }
+
+    async inspectPrint(printerId) {
+        const statusEl = document.getElementById(`inspect-status-${printerId}`);
+        const resultEl = document.getElementById(`inspect-result-${printerId}`);
+        if (statusEl) { statusEl.textContent = '⏳ 下载快照...'; statusEl.className = 'inspect-status'; }
+        if (resultEl) resultEl.style.display = 'none';
+        try {
+            const snapRes = await fetch(`/api/printers/${printerId}/snapshot`);
+            if (!snapRes.ok) {
+                if (statusEl) statusEl.textContent = '❌ 无法获取摄像头画面';
+                return;
+            }
+            const blob = await snapRes.blob();
+            if (statusEl) statusEl.textContent = '⏳ 质检中...';
+            const formData = new FormData();
+            formData.append('image', blob, 'snapshot.jpg');
+            const res = await fetch('/api/inspect/predict', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!data.success) {
+                if (statusEl) statusEl.textContent = '❌ ' + (data.message || '质检失败');
+                return;
+            }
+            if (statusEl) statusEl.textContent = data.is_anomaly ? '⚠️ 检测到异常' : '✅ 正常';
+            if (statusEl) statusEl.className = 'inspect-status ' + (data.is_anomaly ? 'inspect-anomaly' : 'inspect-normal');
+            if (resultEl) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = this._buildInspectResultHTML(data);
+            }
+            const printer = this.printers.find(p => p.id === printerId);
+            this._showInspectPopup(printer ? printer.name : printerId, data);
+        } catch (e) {
+            if (statusEl) statusEl.textContent = '❌ 网络错误';
+        }
+    }
+
+    async checkCVHealth() {
+        try {
+            const res = await fetch('/api/inspect/health');
+            const data = await res.json();
+            this._cvHealthy = data.success && data.message === 'pong';
+            this._cvTimestamp = data.timestamp || null;
+        } catch (e) {
+            this._cvHealthy = false;
+        }
+        this._updateCVHealthDots();
+    }
+
+    _startAutoInspect() {
+        this._stopAutoInspect();
+        const interval = parseInt(this._settings?.inspectInterval) || 0;
+        if (interval <= 0) return;
+        this._autoInspectTimer = setInterval(() => this._autoInspectTick(), interval * 1000);
+    }
+
+    _stopAutoInspect() {
+        if (this._autoInspectTimer) {
+            clearInterval(this._autoInspectTimer);
+            this._autoInspectTimer = null;
+        }
+    }
+
+    _restartAutoInspect() {
+        this._stopAutoInspect();
+        this._startAutoInspect();
+    }
+
+    async _autoInspectTick() {
+        const printing = this.printers.filter(p => p.status === 'printing');
+        if (printing.length === 0) return;
+        for (const printer of printing) {
+            try {
+                const snapRes = await fetch(`/api/printers/${printer.id}/snapshot`);
+                if (!snapRes.ok) continue;
+                const blob = await snapRes.blob();
+                const formData = new FormData();
+                formData.append('image', blob, 'snapshot.jpg');
+                const res = await fetch('/api/inspect/predict', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success && data.is_anomaly && this._toastTimer === null) {
+                    this.showToast(`⚠️ ${printer.name}: 检测到打印异常 (${data.confidence.toFixed(1)}%)`, 'error');
+                }
+                const statusEl = document.getElementById(`inspect-status-${printer.id}`);
+                if (statusEl && data.success) {
+                    statusEl.textContent = data.is_anomaly ? '⚠️ 检测到异常' : '✅ 正常';
+                    statusEl.className = 'inspect-status ' + (data.is_anomaly ? 'inspect-anomaly' : 'inspect-normal');
+                }
+            } catch (e) { /* ignore auto-inspect errors */ }
+        }
+    }
+
+    _showInspectPopup(printerName, data) {
+        const popup = document.getElementById('inspectPopup');
+        const body = document.getElementById('inspectPopupBody');
+        if (!popup || !body) return;
+        popup.style.display = 'block';
+        const anomalyClass = data.is_anomaly ? 'inspect-card-anomaly' : 'inspect-card-normal';
+        const anomalyText = data.is_anomaly ? '⚠️ 异常' : '✅ 正常';
+        body.innerHTML = `
+            <div style="margin-bottom:6px;font-weight:600;font-size:13px;">${printerName || '打印机'}</div>
+            <div class="inspect-grid ${anomalyClass}" style="margin-bottom:8px;">
+                <div class="inspect-header">
+                    <span class="inspect-label-text">${data.label || 'N/A'}</span>
+                    <span class="inspect-anomaly-badge">${anomalyText}</span>
+                </div>
+                <div class="inspect-row"><span class="inspect-key">置信度</span><span class="inspect-val">${data.confidence != null ? data.confidence.toFixed(1) + '%' : 'N/A'}</span></div>
+                <div class="inspect-row"><span class="inspect-key">重构误差</span><span class="inspect-val">${data.reconstruction_error != null ? data.reconstruction_error.toFixed(5) : 'N/A'}</span></div>
+                <div class="inspect-row"><span class="inspect-key">处理耗时</span><span class="inspect-val">${data.processing_time_ms != null ? data.processing_time_ms.toFixed(1) + 'ms' : 'N/A'}</span></div>
+            </div>
+        `;
+        this._addInspectHistory(printerName, data);
+    }
+
+    _addInspectHistory(printerName, data) {
+        const entry = {
+            time: new Date().toLocaleTimeString(),
+            printer: printerName || '未知',
+            is_anomaly: data.is_anomaly,
+            label: data.label,
+            confidence: data.confidence
+        };
+        this._inspectHistory.unshift(entry);
+        if (this._inspectHistory.length > 50) this._inspectHistory.pop();
+        this._renderInspectHistory();
+    }
+
+    _renderInspectHistory() {
+        const el = document.getElementById('inspectHistory');
+        if (!el) return;
+        if (this._inspectHistory.length === 0) {
+            el.innerHTML = '<span class="inspect-history-empty">暂无记录</span>';
+            return;
+        }
+        el.innerHTML = this._inspectHistory.map(h => `
+            <div class="inspect-history-item" onclick="manager._loadHistoryResult('${h.time}')">
+                <div class="inspect-history-item-header">
+                    <span class="inspect-history-time">${h.time} · ${h.printer}</span>
+                    <span class="inspect-history-badge ${h.is_anomaly ? 'anomaly' : 'normal'}">${h.is_anomaly ? '异常' : '正常'}</span>
+                </div>
+                <div class="inspect-history-summary">${h.label || 'N/A'} · ${h.confidence != null ? h.confidence.toFixed(1) + '%' : 'N/A'}</div>
+            </div>
+        `).join('');
+    }
+
+    onInspectPrinterChange() {
+        const sel = document.getElementById('inspectPrinterSelect');
+        const btn = document.getElementById('btnInspectCapture');
+        if (btn) btn.disabled = !sel || !sel.value;
+    }
+
+    switchInspectTab(tab) {
+        this._inspectTab = tab;
+        document.querySelectorAll('.inspect-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+        const snapPanel = document.getElementById('inspectSnapshotPanel');
+        const uploadPanel = document.getElementById('inspectUploadPanel');
+        if (snapPanel) snapPanel.style.display = tab === 'snapshot' ? '' : 'none';
+        if (uploadPanel) uploadPanel.style.display = tab === 'upload' ? '' : 'none';
+    }
+
+    async inspectPageCapture() {
+        const sel = document.getElementById('inspectPrinterSelect');
+        const printerId = sel ? sel.value : '';
+        if (!printerId) return;
+        const preview = document.getElementById('inspectSnapshotPreview');
+        const resultEl = document.getElementById('inspectPageResult');
+        if (preview) preview.innerHTML = '<span class="inspect-preview-placeholder">⏳ 获取快照中...</span>';
+        if (resultEl) resultEl.innerHTML = '<div class="inspect-page-result-empty"><span>⏳ 识别中...</span></div>';
+        try {
+            const snapRes = await fetch(`/api/printers/${printerId}/snapshot`);
+            if (!snapRes.ok) {
+                if (preview) preview.innerHTML = '<span class="inspect-preview-placeholder">❌ 无法获取摄像头画面</span>';
+                return;
+            }
+            const blob = await snapRes.blob();
+            const url = URL.createObjectURL(blob);
+            if (preview) preview.innerHTML = `<img src="${url}" alt="快照">`;
+            const formData = new FormData();
+            formData.append('image', blob, 'snapshot.jpg');
+            const res = await fetch('/api/inspect/predict', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!data.success) {
+                if (resultEl) resultEl.innerHTML = `<div class="inspect-page-result-empty"><span>❌ ${data.message || '识别失败'}</span></div>`;
+                return;
+            }
+            const printer = this.printers.find(p => p.id === printerId);
+            if (resultEl) resultEl.innerHTML = this._buildInspectResultHTML(data);
+            this._addInspectHistory(printer ? printer.name : printerId, data);
+        } catch (e) {
+            if (resultEl) resultEl.innerHTML = '<div class="inspect-page-result-empty"><span>❌ 网络错误</span></div>';
+        }
+    }
+
+    async inspectPageUpload() {
+        const input = document.getElementById('inspectFileInput');
+        if (!input || !input.files || !input.files[0]) return;
+        const file = input.files[0];
+        const preview = document.getElementById('inspectUploadPreview');
+        const resultEl = document.getElementById('inspectPageResult');
+        const url = URL.createObjectURL(file);
+        if (preview) preview.innerHTML = `<img src="${url}" alt="上传图片">`;
+        if (resultEl) resultEl.innerHTML = '<div class="inspect-page-result-empty"><span>⏳ 识别中...</span></div>';
+        try {
+            const formData = new FormData();
+            formData.append('image', file);
+            const res = await fetch('/api/inspect/predict', { method: 'POST', body: formData });
+            const data = await res.json();
+            if (!data.success) {
+                if (resultEl) resultEl.innerHTML = `<div class="inspect-page-result-empty"><span>❌ ${data.message || '识别失败'}</span></div>`;
+                return;
+            }
+            if (resultEl) resultEl.innerHTML = this._buildInspectResultHTML(data);
+            this._addInspectHistory('上传图片', data);
+        } catch (e) {
+            if (resultEl) resultEl.innerHTML = '<div class="inspect-page-result-empty"><span>❌ 网络错误</span></div>';
+        }
+    }
+
+    _updateCVHealthDots() {
+        const dots = document.querySelectorAll('.cv-health-dot');
+        dots.forEach(dot => {
+            if (this._cvHealthy) {
+                dot.className = 'cv-health-dot cv-health-online';
+                dot.title = 'CV 模型在线';
+            } else {
+                dot.className = 'cv-health-dot cv-health-offline';
+                dot.title = 'CV 模型离线';
+            }
+        });
+    }
+
+    async testCVLatency() {
+        const el = document.getElementById('cvLatencyResult');
+        if (el) el.innerHTML = '<span class="latency-testing">⏳ 测试中...</span>';
+        try {
+            const t0 = performance.now();
+            const res = await fetch('/api/inspect/latency');
+            const t1 = performance.now();
+            const data = await res.json();
+            const totalMs = (t1 - t0).toFixed(1);
+            if (data.success) {
+                const rtt = data.rtt_ms != null ? data.rtt_ms.toFixed(1) : 'N/A';
+                const cls = data.rtt_ms < 10 ? 'latency-good' : data.rtt_ms < 50 ? 'latency-warn' : 'latency-slow';
+                el.innerHTML = `
+                    <div class="latency-result ${cls}">
+                        <span class="latency-dot">●</span>
+                        <span>服务端延迟 <strong>${rtt} ms</strong></span>
+                    </div>
+                    <div class="latency-meta">
+                        <span>往返总耗时: ${totalMs} ms</span>
+                        <span>${data.message || 'pong'}</span>
+                    </div>
+                `;
+            } else {
+                el.innerHTML = `<div class="latency-result latency-offline"><span class="latency-dot">●</span><span>${data.message || '测试失败'}</span></div>`;
+            }
+        } catch (e) {
+            if (el) el.innerHTML = '<div class="latency-result latency-offline"><span class="latency-dot">●</span><span>网络错误</span></div>';
+        }
+    }
+
+    _buildInspectResultHTML(data) {
+        const anomalyClass = data.is_anomaly ? 'inspect-card-anomaly' : 'inspect-card-normal';
+        const anomalyText = data.is_anomaly ? '⚠️ 异常' : '✅ 正常';
+        return `
+            <div class="inspect-grid ${anomalyClass}">
+                <div class="inspect-header">
+                    <span class="inspect-label-text">${data.label || 'N/A'}</span>
+                    <span class="inspect-anomaly-badge">${anomalyText}</span>
+                </div>
+                <div class="inspect-row">
+                    <span class="inspect-key">置信度</span>
+                    <span class="inspect-val">${data.confidence != null ? data.confidence.toFixed(1) + '%' : 'N/A'}</span>
+                </div>
+                <div class="inspect-row">
+                    <span class="inspect-key">重构误差</span>
+                    <span class="inspect-val">${data.reconstruction_error != null ? data.reconstruction_error.toFixed(5) : 'N/A'}</span>
+                </div>
+                <div class="inspect-row">
+                    <span class="inspect-key">阈值</span>
+                    <span class="inspect-val">${data.threshold != null ? data.threshold.toFixed(4) : 'N/A'}</span>
+                </div>
+                ${data.quality ? `
+                <div class="inspect-row">
+                    <span class="inspect-key">清晰度</span>
+                    <span class="inspect-val">${data.quality.sharpness != null ? data.quality.sharpness.toFixed(1) : 'N/A'}</span>
+                </div>
+                <div class="inspect-row">
+                    <span class="inspect-key">边缘密度</span>
+                    <span class="inspect-val">${data.quality.edge_density != null ? data.quality.edge_density.toFixed(2) : 'N/A'}</span>
+                </div>
+                <div class="inspect-row">
+                    <span class="inspect-key">平均亮度</span>
+                    <span class="inspect-val">${data.quality.mean_brightness != null ? data.quality.mean_brightness.toFixed(1) : 'N/A'}</span>
+                </div>
+                ` : ''}
+                <div class="inspect-row">
+                    <span class="inspect-key">处理耗时</span>
+                    <span class="inspect-val">${data.processing_time_ms != null ? data.processing_time_ms.toFixed(1) + 'ms' : 'N/A'}</span>
+                </div>
+            </div>
+        `;
     }
 
     // ==================== 文件管理 ====================

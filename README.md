@@ -144,7 +144,15 @@
 ### 设置
 - SD 卡导出路径配置
 - 系统日志查看与导出
+- **主题外观**：深色 / 浅色 / 跟随系统，按客户端 IP 持久化存储至服务器
 - **队伍信息**：读取 `TEAM.md` 文件并以 Markdown 格式渲染展示，支持所见即所得查阅
+- **打印品质检**：基于 CV 模型（`localhost:5001`）的实时异常检测
+  - 仪表盘底部弹出窗口显示最新结果
+  - 独立「打印质检」页面：选择打印机拍照 / 拖拽上传图片 → 识别
+  - 自动质检：可配置间隔，仅对打印中设备生效，异常时 Toast 通知
+  - 历史记录：最近 50 条识别结果，可回溯查看
+- **CV 模型延迟测试**：一键测试与 CV 质检模型的网络延迟
+- **诊断测试**：服务器延迟、打印机 MQTT 延迟测试
 
 ---
 
@@ -262,6 +270,13 @@ XplorePrint/
 | POST | `/api/printers/<id>/print` | 启动打印 |
 | DELETE | `/api/printers/<id>/files/<name>` | 删除文件 |
 | GET | `/api/printer/<id>/hms` | 获取 HMS 错误码及 Wiki 链接 |
+| GET | `/api/printers/<id>/camera` | 获取摄像头 RTSP URL |
+| GET | `/api/printers/<id>/snapshot` | 获取摄像头实时快照（JPEG） |
+| POST | `/api/inspect/predict` | 打印质检：上传快照 → CV 模型 → 异常检测结果 |
+| GET | `/api/inspect/health` | CV 质检模型健康检查 |
+| GET | `/api/inspect/latency` | CV 质检模型延迟测试 (RTT) |
+| GET | `/api/theme` | 获取当前客户端主题偏好 |
+| POST | `/api/theme` | 设置主题偏好 `{"theme":"light\|dark\|auto"}` |
 
 ### 文件存储
 | 方法 | 路径 | 说明 |

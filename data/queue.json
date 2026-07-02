@@ -1,18 +1,1 @@
-[
-  {
-    "id": "2013e144",
-    "printer_id": "printer_1_0442",
-    "file_name": "同步带",
-    "material": "TPU",
-    "color": "#3B82F6",
-    "estimated_time": 30,
-    "priority": 0,
-    "status": "waiting",
-    "created_at": "2026-06-30T18:47:52.500617",
-    "notes": "[FRC零件库] ",
-    "robot_id": "",
-    "subsystem": "",
-    "assigned_to": "",
-    "part_status": "needed"
-  }
-]
+[]

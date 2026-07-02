@@ -1,15 +1,1 @@
-[
-  {
-    "id": "9c26e926",
-    "name": "同步带",
-    "category": "传动",
-    "description": "带轮同步带",
-    "recommended_material": "TPU",
-    "estimated_time": 30,
-    "filament_grams": 20,
-    "infill": "30%",
-    "wall_loops": 3,
-    "notes": "",
-    "files": []
-  }
-]
+[]

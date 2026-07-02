@@ -91,6 +91,52 @@ def _hash_admin_key(key: str) -> str:
 def verify_admin_key(key: str) -> bool:
     return _hash_admin_key(key) == _ADMIN_KEY_HASH
 
+
+def _theme_store_path() -> str:
+    return os.path.join(os.path.dirname(__file__), "data", "theme_preferences.json")
+
+
+def _load_theme_store() -> dict:
+    path = _theme_store_path()
+    if not os.path.exists(path):
+        return {}
+    try:
+        import json as _json
+        with open(path, "r", encoding="utf-8") as f:
+            return _json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_theme_store(data: dict):
+    import json as _json
+    path = _theme_store_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        _json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+@app.route("/api/theme", methods=["GET"])
+def get_theme():
+    ip = request.remote_addr or "unknown"
+    store = _load_theme_store()
+    theme = store.get(ip, "auto")
+    return jsonify({"success": True, "ip": ip, "theme": theme})
+
+
+@app.route("/api/theme", methods=["POST"])
+def set_theme():
+    data = request.json or {}
+    theme = data.get("theme", "")
+    if theme not in ("light", "dark", "auto"):
+        return jsonify({"success": False, "message": "无效的主题值，可选: light, dark, auto"}), 400
+    ip = request.remote_addr or "unknown"
+    store = _load_theme_store()
+    store[ip] = theme
+    _save_theme_store(store)
+    logger.info(f"Theme set: {ip} → {theme}")
+    return jsonify({"success": True, "ip": ip, "theme": theme})
+
 @app.cli.command("set-admin-key")
 def set_admin_key():
     """设置或修改管理员密钥 — 用法: flask set-admin-key"""
@@ -476,6 +522,72 @@ def video_stream(printer_id):
 @app.route("/api/printers/<printer_id>/snapshot")
 def video_snapshot(printer_id):
     return _snapshot_response(printer_id)
+
+
+@app.route("/api/inspect/predict", methods=["POST"])
+def inspect_predict():
+    if "image" not in request.files:
+        return jsonify({"success": False, "message": "未上传图片"}), 400
+    img_file = request.files["image"]
+    img_data = img_file.read()
+    try:
+        import requests as _requests
+        resp = _requests.post(
+            "http://localhost:5001/predict",
+            files={"image": (img_file.filename or "snapshot.jpg", img_data, img_file.content_type or "image/jpeg")},
+            timeout=10
+        )
+        if resp.status_code != 200:
+            return jsonify({"success": False, "message": f"质检服务异常: {resp.status_code}"}), 502
+        result = resp.json()
+        result["success"] = True
+        return jsonify(result)
+    except _requests.exceptions.ConnectionError:
+        return jsonify({"success": False, "message": "质检服务未启动 (localhost:5001)"}), 503
+    except Exception as e:
+        logger.error(f"Inspect predict failed: {e}")
+        return jsonify({"success": False, "message": f"质检请求失败: {str(e)}"}), 500
+
+
+@app.route("/api/inspect/latency", methods=["GET"])
+def inspect_latency():
+    import time
+    try:
+        import requests as _requests
+        t0 = time.perf_counter()
+        resp = _requests.get("http://localhost:5001/ping", timeout=5)
+        t1 = time.perf_counter()
+        rtt_ms = round((t1 - t0) * 1000, 1)
+        if resp.status_code == 200:
+            data = resp.json()
+            return jsonify({
+                "success": True,
+                "rtt_ms": rtt_ms,
+                "message": data.get("message", "pong"),
+                "timestamp": data.get("timestamp")
+            })
+        return jsonify({"success": False, "rtt_ms": rtt_ms, "message": f"CV 服务异常: {resp.status_code}"}), 502
+    except _requests.exceptions.ConnectionError:
+        return jsonify({"success": False, "rtt_ms": None, "message": "CV 质检服务未启动"}), 503
+    except Exception as e:
+        return jsonify({"success": False, "rtt_ms": None, "message": str(e)}), 500
+
+
+@app.route("/api/inspect/health", methods=["GET"])
+def inspect_health():
+    try:
+        import requests as _requests
+        resp = _requests.get("http://localhost:5001/ping", timeout=5)
+        if resp.status_code != 200:
+            return jsonify({"success": False, "status": "error", "message": f"CV 服务异常: {resp.status_code}"}), 502
+        data = resp.json()
+        data["success"] = True
+        return jsonify(data)
+    except _requests.exceptions.ConnectionError:
+        return jsonify({"success": False, "status": "offline", "message": "CV 质检服务未启动"}), 503
+    except Exception as e:
+        logger.error(f"CV health check failed: {e}")
+        return jsonify({"success": False, "status": "error", "message": str(e)}), 500
 
 
 def _snapshot_response(printer_id):

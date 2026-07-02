@@ -142,6 +142,12 @@
                     </svg>
                     <span>Git for 3D</span>
                 </a>
+                <a href="#" class="nav-item" data-view="inspect">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                    </svg>
+                    <span>打印质检</span>
+                </a>
                 <a href="#" class="nav-item" data-view="settings">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"/>
@@ -229,6 +235,13 @@
                         <p>暂无打印机</p>
                         <span>点击"添加打印机"开始管理你的3D打印机</span>
                     </div>
+                </div>
+                <div class="inspect-popup" id="inspectPopup" style="display:none;">
+                    <div class="inspect-popup-header">
+                        <span class="inspect-popup-title">打印质检结果</span>
+                        <button class="inspect-popup-close" onclick="document.getElementById('inspectPopup').style.display='none'">&times;</button>
+                    </div>
+                    <div class="inspect-popup-body" id="inspectPopupBody"></div>
                 </div>
             </section>
 
@@ -692,6 +705,66 @@
             </section>
 
             <!-- Settings View -->
+            <section id="inspectView" class="view">
+                <header class="page-header">
+                    <h2>打印质检</h2>
+                    <p class="page-subtitle">基于 CV 模型的实时打印异常检测</p>
+                </header>
+                <div class="inspect-page-layout">
+                    <div class="inspect-page-left">
+                        <div class="inspect-page-card">
+                            <h3>选择打印机</h3>
+                            <div class="form-group">
+                                <select class="form-input" id="inspectPrinterSelect" onchange="manager.onInspectPrinterChange()">
+                                    <option value="">-- 选择打印机 --</option>
+                                </select>
+                            </div>
+                            <div class="inspect-source-tabs">
+                                <button class="inspect-tab active" data-tab="snapshot" onclick="manager.switchInspectTab('snapshot')">实时快照</button>
+                                <button class="inspect-tab" data-tab="upload" onclick="manager.switchInspectTab('upload')">上传图片</button>
+                            </div>
+                            <div class="inspect-source-panel" id="inspectSnapshotPanel">
+                                <button class="btn btn-primary btn-block" id="btnInspectCapture" onclick="manager.inspectPageCapture()" disabled>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                                    拍照并识别
+                                </button>
+                                <div class="inspect-snapshot-preview" id="inspectSnapshotPreview">
+                                    <span class="inspect-preview-placeholder">点击上方按钮获取快照</span>
+                                </div>
+                            </div>
+                            <div class="inspect-source-panel" id="inspectUploadPanel" style="display:none;">
+                                <label class="inspect-upload-zone" id="inspectUploadZone">
+                                    <input type="file" accept="image/*" id="inspectFileInput" onchange="manager.inspectPageUpload()" style="display:none;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:32px;height:32px;margin-bottom:8px;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                    <span>点击或拖拽上传图片</span>
+                                    <span class="inspect-upload-hint">支持 JPG / PNG</span>
+                                </label>
+                                <div class="inspect-snapshot-preview" id="inspectUploadPreview">
+                                    <span class="inspect-preview-placeholder">上传图片后自动预览</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="inspect-page-right">
+                        <div class="inspect-page-card">
+                            <h3>识别结果</h3>
+                            <div class="inspect-page-result" id="inspectPageResult">
+                                <div class="inspect-page-result-empty">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:40px;height:40px;opacity:0.3;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                    <span>等待识别...</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="inspect-page-card">
+                            <h3>历史记录</h3>
+                            <div class="inspect-history" id="inspectHistory">
+                                <span class="inspect-history-empty">暂无记录</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <section id="settingsView" class="view">
                 <header class="page-header">
                     <h2>设置</h2>
@@ -700,12 +773,30 @@
                     <div class="settings-card">
                         <h3>应用设置</h3>
                         <div class="form-group">
+                            <label>主题外观</label>
+                            <select class="form-input" id="settingTheme" onchange="manager.setTheme(this.value)">
+                                <option value="auto">跟随系统</option>
+                                <option value="dark">深色模式</option>
+                                <option value="light">浅色模式</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label>自动刷新间隔（秒）</label>
                             <select class="form-input" id="settingRefreshInterval" onchange="manager.saveSetting('refreshInterval', this.value)">
                                 <option value="2">2 秒</option>
                                 <option value="5" selected>5 秒</option>
                                 <option value="10">10 秒</option>
                                 <option value="30">30 秒</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>打印质检间隔（秒）</label>
+                            <select class="form-input" id="settingInspectInterval" onchange="manager.saveSetting('inspectInterval', this.value)">
+                                <option value="0">关闭自动质检</option>
+                                <option value="30">30 秒</option>
+                                <option value="60" selected>60 秒</option>
+                                <option value="120">2 分钟</option>
+                                <option value="300">5 分钟</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -817,6 +908,16 @@
                         </div>
                     </div>
 
+                    <div class="settings-card">
+                        <h3>CV 质检模型</h3>
+                        <p class="settings-desc">测试与打印质检 CV 模型 (localhost:5001) 的网络延迟</p>
+                        <div class="latency-row">
+                            <button class="btn btn-sm btn-outline" onclick="manager.testCVLatency()">测试延迟</button>
+                            <div id="cvLatencyResult" class="latency-display">
+                                <span class="latency-idle">等待测试...</span>
+                            </div>
+                        </div>
+                    </div>
                     <div class="settings-card">
                         <h3>队伍信息</h3>
                         <div class="team-info-markdown" id="teamInfoMarkdown">
