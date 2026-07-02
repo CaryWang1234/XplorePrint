@@ -517,6 +517,13 @@ class PrinterManager:
         client = self._clients.get(printer_id)
         if not client:
             return {"success": False, "message": "打印机未连接"}
+        if not client._connected:
+            return {"success": False, "message": "打印机未上线，请检查连接"}
+        printer = client.printer
+        if printer and printer.status == PrinterStatus.PRINTING:
+            return {"success": False, "message": "打印机正在打印中，请先停止当前任务"}
+        if printer and printer.status == PrinterStatus.PAUSED:
+            return {"success": False, "message": "打印机已暂停，请先恢复或停止当前任务"}
         try:
             ok = client.start_print_file(
                 filename, plate_number=plate_number,
@@ -525,10 +532,10 @@ class PrinterManager:
             )
             if ok:
                 return {"success": True, "message": f"开始打印: {filename}"}
-            return {"success": False, "message": "打印机未响应打印指令"}
+            return {"success": False, "message": "打印机未响应打印指令，请检查打印机是否在线"}
         except Exception as e:
             logger.error(f"Start print error: {e}")
-            return {"success": False, "message": str(e)}
+            return {"success": False, "message": f"打印指令发送失败: {str(e)}"}
 
     def get_camera_url(self, printer_id: str) -> str:
         client = self._clients.get(printer_id)

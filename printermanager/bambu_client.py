@@ -455,28 +455,89 @@ class BambuClient:
         try:
             if ams_mapping is None or len(ams_mapping) == 0:
                 ams_mapping = [0]
+
+            is_gcode_only = filename.lower().endswith(".gcode") and not filename.lower().endswith(".3mf")
+
             logger.info(
                 f"start_print_file: {filename} plate={plate_number} "
                 f"use_ams={use_ams} mapping={ams_mapping} "
-                f"flow_cali={flow_calibration}"
+                f"flow_cali={flow_calibration} gcode_only={is_gcode_only}"
             )
-            if filename.lower().endswith(".gcode") and not filename.lower().endswith(".3mf"):
-                plate_number = filename
-            result = self._api.start_print(
-                filename,
-                plate_number,
-                use_ams=use_ams,
-                ams_mapping=ams_mapping,
-                flow_calibration=flow_calibration,
-            )
+
+            if not self._api.mqtt_client_ready():
+                logger.error(f"MQTT client not ready for {self.printer.name}")
+                return False
+
+            if is_gcode_only:
+                result = self._start_print_gcode(
+                    filename, use_ams=use_ams,
+                    ams_mapping=ams_mapping,
+                    flow_calibration=flow_calibration,
+                )
+            else:
+                result = self._start_print_3mf(
+                    filename, plate_number=plate_number,
+                    use_ams=use_ams, ams_mapping=ams_mapping,
+                    flow_calibration=flow_calibration,
+                )
+
             logger.info(
                 f"Start print result: {result} "
                 f"file={filename} plate={plate_number}"
             )
             return bool(result)
         except Exception as e:
-            logger.error(f"Start print failed for {self.printer.name}: {e}")
+            logger.error(f"Start print failed for {self.printer.name}: {e}", exc_info=True)
             return False
+
+    def _start_print_gcode(self, filename: str, use_ams: bool = True,
+                           ams_mapping: list[int] = None,
+                           flow_calibration: bool = True) -> bool:
+        if ams_mapping is None:
+            ams_mapping = [0]
+        payload = {
+            "print": {
+                "sequence_id": "20000",
+                "command": "project_file",
+                "param": filename,
+                "url": f"ftp:///{filename}",
+                "file": filename,
+                "subtask_name": filename,
+                "profile_id": "",
+                "project_id": "",
+                "use_ams": use_ams,
+                "ams_mapping": list(ams_mapping),
+                "bed_leveling": True,
+                "flow_cali": flow_calibration,
+                "vibration_cali": True,
+                "bed_type": "textured_plate",
+                "layer_inspect": False,
+                "task_id": "",
+                "use_ext_spool": bool(not use_ams),
+                "calibration": False,
+                "timelapse": False,
+                "xcam_mqtt_protocol": "1",
+                "xcam_mqtt_protocol_ver": "1",
+                "version": 1,
+            }
+        }
+        logger.info(
+            f"Sending gcode print command: {payload} "
+            f"to {self.printer.name}"
+        )
+        return self._api.mqtt_client._PrinterMQTTClient__publish_command(payload)
+
+    def _start_print_3mf(self, filename: str, plate_number: int = 1,
+                         use_ams: bool = True,
+                         ams_mapping: list[int] = None,
+                         flow_calibration: bool = True) -> bool:
+        return self._api.start_print(
+            filename,
+            plate_number,
+            use_ams=use_ams,
+            ams_mapping=ams_mapping,
+            flow_calibration=flow_calibration,
+        )
 
     def get_camera_url(self) -> str:
         return f"rtsp://{self.printer.ip_address}:322/streaming/live/1"

@@ -1298,17 +1298,30 @@ def g3d_update_tags(project_id):
 
 
 @app.route("/api/g3d/projects/<project_id>/assembly", methods=["GET"])
-def g3d_get_assembly(project_id):
-    info = g3d_manager._get_assembly_info(project_id)
-    return jsonify(info or {})
+def g3d_get_assemblies(project_id):
+    assemblies = g3d_manager._get_assemblies(project_id)
+    return jsonify(assemblies)
 
 
-@app.route("/api/g3d/projects/<project_id>/assembly", methods=["PUT"])
-def g3d_update_assembly(project_id):
+@app.route("/api/g3d/projects/<project_id>/assembly", methods=["POST"])
+def g3d_add_assembly(project_id):
     data = request.json
     if not data:
         return jsonify({"success": False, "message": "请求体为空"}), 400
-    return jsonify(g3d_manager.update_assembly_info(project_id, data))
+    return jsonify(g3d_manager.add_assembly(project_id, data))
+
+
+@app.route("/api/g3d/projects/<project_id>/assembly/<assembly_id>", methods=["PUT"])
+def g3d_update_assembly(project_id, assembly_id):
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "message": "请求体为空"}), 400
+    return jsonify(g3d_manager.update_assembly(project_id, assembly_id, data))
+
+
+@app.route("/api/g3d/projects/<project_id>/assembly/<assembly_id>", methods=["DELETE"])
+def g3d_delete_assembly(project_id, assembly_id):
+    return jsonify(g3d_manager.delete_assembly(project_id, assembly_id))
 
 
 @socketio.on("connect")

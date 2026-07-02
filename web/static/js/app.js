@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/**
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿/**
  * XplorePrint - Main Application JavaScript
  * FRC Team 11019 Xplore
  * 3D Printer Management Software
@@ -202,7 +202,7 @@ class PrinterApp {
         const zone = document.getElementById('inspectUploadZone');
         const input = document.getElementById('inspectFileInput');
         if (!zone || !input) return;
-        zone.addEventListener('click', () => input.click());
+        input.addEventListener('change', () => this.inspectPageUpload());
         zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.style.borderColor = 'var(--accent-blue)'; });
         zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
         zone.addEventListener('drop', (e) => {
@@ -210,7 +210,6 @@ class PrinterApp {
             zone.style.borderColor = '';
             if (e.dataTransfer.files.length) {
                 input.files = e.dataTransfer.files;
-                this.inspectPageUpload();
             }
         });
     }
@@ -2024,6 +2023,16 @@ class PrinterApp {
         return Math.round(celsius) + '°C';
     }
 
+    _formatFileSize(bytes) {
+        if (bytes == null || isNaN(bytes)) return '--';
+        if (bytes < 1024) return bytes + ' B';
+        const kb = bytes / 1024;
+        if (kb < 1024) return kb.toFixed(1) + ' KB';
+        const mb = kb / 1024;
+        if (mb < 1024) return mb.toFixed(1) + ' MB';
+        return (mb / 1024).toFixed(2) + ' GB';
+    }
+
     async setTheme(theme) {
         this.applyTheme(theme);
         try {
@@ -3386,8 +3395,12 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
                         <button class="btn btn-sm btn-primary" onclick="manager.sendToPrinter('${this.escapeJs(f.name)}')" title="发送到打印机">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="5 12 12 5 19 12"/></svg>
                         </button>
-                        <button class="btn btn-sm btn-success" onclick="manager.startPrintFromStorage('${this.escapeJs(f.name)}')" title="发送并打印">
+                        <button class="btn btn-sm btn-success" onclick="manager.startPrintFromStorage('${this.escapeJs(f.name)}')" title="发送并打印（设置参数）">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </button>
+                        <button class="btn btn-sm btn-primary" onclick="manager.quickPrintFromStorage('${this.escapeJs(f.name)}')" title="发送并快速打印（默认参数）">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:8px;height:8px;margin-left:-2px;"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                         </button>
                         <button class="btn btn-sm btn-danger" onclick="manager.deleteStorageFile('${this.escapeJs(f.name)}')" title="删除">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
@@ -3431,6 +3444,36 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
         this._amsPrintFilename = filename;
         this._amsPrintFromStorage = true;
         this.showAmsMappingModal(printerId, filename);
+    }
+
+    async quickPrintFromStorage(filename) {
+        const printerId = document.getElementById('fmPrinterSelect').value;
+        if (!printerId) {
+            this.showToast('请先选择目标打印机', 'error');
+            return;
+        }
+        try {
+            const res = await fetch('/api/storage/print', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename,
+                    printer_id: printerId,
+                    plate_number: 1,
+                    use_ams: true,
+                    ams_mapping: null,
+                    flow_calibration: true,
+                }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                this.showToast(`已发送并开始打印: ${filename}`, 'success');
+            } else {
+                this.showToast('失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (e) {
+            this.showToast('失败: 网络错误', 'error');
+        }
     }
 
     async deleteStorageFile(filename) {
@@ -3487,8 +3530,12 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
                         <div class="fm-file-ext">${ext}</div>
                     </div>
                     <div class="fm-file-actions">
-                        <button class="btn btn-sm btn-success" onclick="manager.startPrint('${printerId}', '${this.escapeJs(f)}')" title="开始打印">
+                        <button class="btn btn-sm btn-success" onclick="manager.startPrint('${printerId}', '${this.escapeJs(f)}')" title="打印（设置参数）">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </button>
+                        <button class="btn btn-sm btn-primary" onclick="manager.quickPrint('${printerId}', '${this.escapeJs(f)}')" title="快速打印（默认参数）">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:8px;height:8px;margin-left:-2px;"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                         </button>
                         <button class="btn btn-sm btn-danger" onclick="manager.deleteFile('${printerId}', '${this.escapeJs(f)}')" title="删除">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
@@ -3541,6 +3588,33 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
         document.getElementById('amsMappingModal').classList.add('active');
     }
 
+    async quickPrint(printerId, filename) {
+        this.showToast('正在启动打印...', 'info');
+        try {
+            const url = `/api/printers/${printerId}/print`;
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    filename,
+                    printer_id: printerId,
+                    plate_number: 1,
+                    use_ams: true,
+                    ams_mapping: null,
+                    flow_calibration: true,
+                }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                this.showToast(`已开始打印: ${filename}`, 'success');
+            } else {
+                this.showToast('启动失败: ' + (result.message || '未知错误'), 'error');
+            }
+        } catch (e) {
+            this.showToast('启动失败: 网络错误', 'error');
+        }
+    }
+
     async confirmStartPrint() {
         const printerId = this._amsPrintPrinterId;
         const filename = this._amsPrintFilename;
@@ -3557,6 +3631,12 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
             const val = parseInt(sel.value);
             if (val > 0) amsMapping.push(val);
         });
+
+        const confirmBtn = document.getElementById('amsConfirmBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = '正在启动...';
+        }
 
         try {
             const url = fromStorage
@@ -3583,6 +3663,11 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
             }
         } catch (e) {
             this.showToast('启动失败: 网络错误', 'error');
+        } finally {
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = '开始打印';
+            }
         }
     }
 
@@ -4178,7 +4263,7 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
             this._renderG3DCommits(project.commits || []);
             this._renderG3DStaging();
             this._renderG3DReadme(project.readme || '');
-            this._renderG3DAssembly(project.assembly);
+            this._renderG3DAssembly(project.assemblies || []);
         } catch (e) {
             this.showToast('加载项目失败', 'error');
         }
@@ -4306,7 +4391,7 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
             container.innerHTML = files.map(f => `
                 <div class="g3d-staging-file">
                     <span class="file-name">${this._escapeHtml(f.name)}</span>
-                    <span class="file-size">${f.size_kb} KB</span>
+                    <span class="file-size">${this._formatFileSize(f.size)}</span>
                     <span class="file-remove" onclick="event.stopPropagation();manager._g3dRemoveStagingFile('${f.name}')">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                     </span>
@@ -4378,7 +4463,7 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
                     <div class="g3d-file-icon ${ext}">${ext.toUpperCase().substring(0, 3)}</div>
                     <div class="g3d-file-info">
                         <div class="g3d-file-name">${this._escapeHtml(f.name)}</div>
-                        <div class="g3d-file-meta">${f.size_kb} KB</div>
+                        <div class="g3d-file-meta">${this._formatFileSize(f.size)}</div>
                     </div>
                     <div class="g3d-file-actions">
                         <a class="g3d-file-download" href="/api/g3d/projects/${this._g3dProjectId}/download/${encodeURIComponent(f.name)}" title="下载">
@@ -4525,6 +4610,9 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
         if (readme) {
             area.innerHTML = `
                 <div class="g3d-readme-content" id="g3dReadmeContent">${this._parseMarkdown(readme)}</div>
+                <div style="margin-top:8px;" id="g3dReadmeEditBtn">
+                    <button class="btn btn-outline btn-sm" onclick="manager._g3dEditReadme()">编辑 README</button>
+                </div>
                 <div class="g3d-readme-edit" style="display:none;" id="g3dReadmeEdit">
                     <textarea class="form-control" id="g3dReadmeTextarea" rows="10" style="width:100%;">${this._escapeHtml(readme)}</textarea>
                     <div style="margin-top:8px;display:flex;gap:6px;">
@@ -4555,8 +4643,10 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
         const content = document.getElementById('g3dReadmeContent');
         const edit = document.getElementById('g3dReadmeEdit');
         const empty = document.querySelector('.g3d-readme-empty');
+        const editBtn = document.getElementById('g3dReadmeEditBtn');
         if (content) content.style.display = 'none';
         if (empty) empty.style.display = 'none';
+        if (editBtn) editBtn.style.display = 'none';
         if (edit) edit.style.display = 'block';
     }
 
@@ -4564,9 +4654,11 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
         const content = document.getElementById('g3dReadmeContent');
         const edit = document.getElementById('g3dReadmeEdit');
         const empty = document.querySelector('.g3d-readme-empty');
+        const editBtn = document.getElementById('g3dReadmeEditBtn');
         if (edit) edit.style.display = 'none';
         if (content) content.style.display = 'block';
         if (empty) empty.style.display = '';
+        if (editBtn) editBtn.style.display = '';
     }
 
     async _g3dSaveReadme() {
@@ -4590,109 +4682,186 @@ ${printer.ams_units && printer.ams_units.length > 0 ? `
         }
     }
 
-    _renderG3DAssembly(assembly) {
+    _renderG3DAssembly(assemblies) {
         const area = document.getElementById('g3dAssemblyArea');
         if (!area) return;
-        if (assembly && assembly.assembly_name) {
-            area.innerHTML = `
-                <div class="g3d-assembly-info" id="g3dAssemblyInfo">
-                    <h4>${this._escapeHtml(assembly.assembly_name)}</h4>
+        const list = assemblies || [];
+        const cards = list.map((a, i) => {
+            const parts = a.parts || [];
+            const partCount = a.part_count || parts.length;
+            return `
+                <div class="g3d-assembly-card" data-assembly-id="${this._escapeHtml(a.id)}">
+                    <div class="g3d-assembly-card-header">
+                        <h4>${this._escapeHtml(a.assembly_name)}</h4>
+                        <div class="g3d-assembly-card-actions">
+                            <button class="btn btn-outline btn-sm" onclick="manager._g3dEditAssembly('${this._escapeHtml(a.id)}')">编辑</button>
+                            <button class="btn btn-outline btn-sm btn-danger" onclick="manager._g3dDeleteAssembly('${this._escapeHtml(a.id)}')">删除</button>
+                        </div>
+                    </div>
                     <div class="assembly-meta">
-                        <span>零件数: ${assembly.part_count || (assembly.parts ? assembly.parts.length : 0)}</span>
-                        ${assembly.updated_at ? `<span>更新于: ${this._formatDate(assembly.updated_at)}</span>` : ''}
+                        <span>零件数: ${partCount}</span>
+                        ${a.updated_at ? `<span>更新于: ${this._formatDate(a.updated_at)}</span>` : ''}
                     </div>
-                    ${(assembly.parts && assembly.parts.length) ? `<div class="assembly-parts">${assembly.parts.map(p => `<span class="assembly-part-tag">${this._escapeHtml(p)}</span>`).join('')}</div>` : ''}
-                    ${assembly.notes ? `<div class="assembly-notes">${this._escapeHtml(assembly.notes)}</div>` : ''}
-                    <div class="assembly-actions">
-                        <button class="btn btn-outline btn-sm" onclick="manager._g3dEditAssembly()">编辑装配体</button>
-                    </div>
-                </div>
-                <div class="g3d-assembly-edit" style="display:none;" id="g3dAssemblyEdit">
-                    <div class="form-group">
-                        <label>装配体名称</label>
-                        <input type="text" class="form-control" id="g3dAssemblyName" value="${this._escapeHtml(assembly.assembly_name)}">
-                    </div>
-                    <div class="form-group">
-                        <label>零件列表 (每行一个)</label>
-                        <textarea class="form-control" id="g3dAssemblyParts" rows="4">${(assembly.parts || []).join('\n')}</textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>备注说明</label>
-                        <textarea class="form-control" id="g3dAssemblyNotes" rows="3">${this._escapeHtml(assembly.notes || '')}</textarea>
-                    </div>
-                    <div style="display:flex;gap:6px;">
-                        <button class="btn btn-primary btn-sm" onclick="manager._g3dSaveAssembly()">保存</button>
-                        <button class="btn btn-outline btn-sm" onclick="manager._g3dCancelAssembly()">取消</button>
+                    ${parts.length ? `<div class="assembly-parts">${parts.map(p => `<span class="assembly-part-tag">${this._escapeHtml(p)}</span>`).join('')}</div>` : ''}
+                    ${a.notes ? `<div class="assembly-notes">${this._escapeHtml(a.notes)}</div>` : ''}
+                    <div class="g3d-assembly-edit" style="display:none;" id="g3dAssemblyEdit_${this._escapeHtml(a.id)}">
+                        <div class="form-group">
+                            <label>装配体名称</label>
+                            <input type="text" class="form-control" id="g3dAssemblyName_${this._escapeHtml(a.id)}" value="${this._escapeHtml(a.assembly_name)}">
+                        </div>
+                        <div class="form-group">
+                            <label>零件列表 (每行一个)</label>
+                            <textarea class="form-control" id="g3dAssemblyParts_${this._escapeHtml(a.id)}" rows="4">${parts.join('\n')}</textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>备注说明</label>
+                            <textarea class="form-control" id="g3dAssemblyNotes_${this._escapeHtml(a.id)}" rows="3">${this._escapeHtml(a.notes || '')}</textarea>
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button class="btn btn-primary btn-sm" onclick="manager._g3dSaveAssembly('${this._escapeHtml(a.id)}')">保存</button>
+                            <button class="btn btn-outline btn-sm" onclick="manager._g3dCancelAssembly('${this._escapeHtml(a.id)}')">取消</button>
+                        </div>
                     </div>
                 </div>
             `;
-        } else {
-            area.innerHTML = `
-                <div class="g3d-assembly-empty" id="g3dAssemblyEmpty">
-                    <p>暂无装配体信息</p>
-                    <p style="font-size:11px;">添加装配体说明来记录零件组成</p>
-                    <button class="btn btn-outline btn-sm" onclick="manager._g3dEditAssembly()">添加装配体信息</button>
+        }).join('');
+
+        area.innerHTML = `
+            <div class="g3d-assembly-list" id="g3dAssemblyList">
+                ${cards || '<div class="g3d-assembly-empty"><p>暂无装配体信息</p><p style="font-size:11px;">添加装配体说明来记录零件组成</p></div>'}
+            </div>
+            <div style="margin-top:12px;display:flex;gap:6px;">
+                <button class="btn btn-outline btn-sm" onclick="manager._g3dAddAssembly()">+ 添加装配体</button>
+            </div>
+            <div class="g3d-assembly-edit" style="display:none;" id="g3dAssemblyAddEdit">
+                <div class="form-group">
+                    <label>装配体名称</label>
+                    <input type="text" class="form-control" id="g3dAssemblyAddName" placeholder="例如: 机器人底盘总成">
                 </div>
-                <div class="g3d-assembly-edit" style="display:none;" id="g3dAssemblyEdit">
-                    <div class="form-group">
-                        <label>装配体名称</label>
-                        <input type="text" class="form-control" id="g3dAssemblyName" placeholder="例如: 机器人底盘总成">
-                    </div>
-                    <div class="form-group">
-                        <label>零件列表 (每行一个)</label>
-                        <textarea class="form-control" id="g3dAssemblyParts" rows="4" placeholder="底盘底座.sldprt&#10;电机支架.sldprt"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>备注说明</label>
-                        <textarea class="form-control" id="g3dAssemblyNotes" rows="3"></textarea>
-                    </div>
-                    <div style="display:flex;gap:6px;">
-                        <button class="btn btn-primary btn-sm" onclick="manager._g3dSaveAssembly()">保存</button>
-                        <button class="btn btn-outline btn-sm" onclick="manager._g3dCancelAssembly()">取消</button>
-                    </div>
+                <div class="form-group">
+                    <label>零件列表 (每行一个)</label>
+                    <textarea class="form-control" id="g3dAssemblyAddParts" rows="4" placeholder="底盘底座.sldprt&#10;电机支架.sldprt"></textarea>
                 </div>
-            `;
-        }
+                <div class="form-group">
+                    <label>备注说明</label>
+                    <textarea class="form-control" id="g3dAssemblyAddNotes" rows="3"></textarea>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="btn btn-primary btn-sm" onclick="manager._g3dSaveNewAssembly()">添加</button>
+                    <button class="btn btn-outline btn-sm" onclick="manager._g3dCancelAddAssembly()">取消</button>
+                </div>
+            </div>
+        `;
     }
 
-    _g3dEditAssembly() {
-        const info = document.getElementById('g3dAssemblyInfo');
-        const empty = document.getElementById('g3dAssemblyEmpty');
-        const edit = document.getElementById('g3dAssemblyEdit');
-        if (info) info.style.display = 'none';
-        if (empty) empty.style.display = 'none';
+    _g3dAddAssembly() {
+        const edit = document.getElementById('g3dAssemblyAddEdit');
         if (edit) edit.style.display = 'block';
     }
 
-    _g3dCancelAssembly() {
-        const info = document.getElementById('g3dAssemblyInfo');
-        const empty = document.getElementById('g3dAssemblyEmpty');
-        const edit = document.getElementById('g3dAssemblyEdit');
+    _g3dCancelAddAssembly() {
+        const edit = document.getElementById('g3dAssemblyAddEdit');
         if (edit) edit.style.display = 'none';
-        if (info) info.style.display = 'block';
-        if (empty) empty.style.display = '';
+        const name = document.getElementById('g3dAssemblyAddName');
+        const parts = document.getElementById('g3dAssemblyAddParts');
+        const notes = document.getElementById('g3dAssemblyAddNotes');
+        if (name) name.value = '';
+        if (parts) parts.value = '';
+        if (notes) notes.value = '';
     }
 
-    async _g3dSaveAssembly() {
-        const name = document.getElementById('g3dAssemblyName').value.trim();
-        const partsText = document.getElementById('g3dAssemblyParts').value.trim();
-        const notes = document.getElementById('g3dAssemblyNotes').value.trim();
+    async _g3dSaveNewAssembly() {
+        const name = document.getElementById('g3dAssemblyAddName').value.trim();
+        const partsText = document.getElementById('g3dAssemblyAddParts').value.trim();
+        const notes = document.getElementById('g3dAssemblyAddNotes').value.trim();
+        if (!name) { this.showToast('请输入装配体名称', 'error'); return; }
         const parts = partsText ? partsText.split('\n').map(s => s.trim()).filter(Boolean) : [];
         try {
             const res = await fetch(`/api/g3d/projects/${this._g3dProjectId}/assembly`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assembly_name: name, parts, notes, part_count: parts.length })
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.showToast('装配体已添加', 'success');
+                this._renderG3DAssembly(data.assemblies);
+            } else {
+                this.showToast(data.message || '添加失败', 'error');
+            }
+        } catch (e) {
+            this.showToast('添加失败', 'error');
+        }
+    }
+
+    _g3dEditAssembly(assemblyId) {
+        const card = document.querySelector(`.g3d-assembly-card[data-assembly-id="${assemblyId}"]`);
+        if (!card) return;
+        const info = card.querySelector('.g3d-assembly-card-header');
+        const meta = card.querySelector('.assembly-meta');
+        const parts = card.querySelector('.assembly-parts');
+        const notes = card.querySelector('.assembly-notes');
+        const edit = document.getElementById(`g3dAssemblyEdit_${assemblyId}`);
+        if (info) info.style.display = 'none';
+        if (meta) meta.style.display = 'none';
+        if (parts) parts.style.display = 'none';
+        if (notes) notes.style.display = 'none';
+        if (edit) edit.style.display = 'block';
+    }
+
+    _g3dCancelAssembly(assemblyId) {
+        const card = document.querySelector(`.g3d-assembly-card[data-assembly-id="${assemblyId}"]`);
+        if (!card) return;
+        const info = card.querySelector('.g3d-assembly-card-header');
+        const meta = card.querySelector('.assembly-meta');
+        const parts = card.querySelector('.assembly-parts');
+        const notes = card.querySelector('.assembly-notes');
+        const edit = document.getElementById(`g3dAssemblyEdit_${assemblyId}`);
+        if (info) info.style.display = '';
+        if (meta) meta.style.display = '';
+        if (parts) parts.style.display = '';
+        if (notes) notes.style.display = '';
+        if (edit) edit.style.display = 'none';
+    }
+
+    async _g3dSaveAssembly(assemblyId) {
+        const name = document.getElementById(`g3dAssemblyName_${assemblyId}`).value.trim();
+        const partsText = document.getElementById(`g3dAssemblyParts_${assemblyId}`).value.trim();
+        const notes = document.getElementById(`g3dAssemblyNotes_${assemblyId}`).value.trim();
+        const parts = partsText ? partsText.split('\n').map(s => s.trim()).filter(Boolean) : [];
+        try {
+            const res = await fetch(`/api/g3d/projects/${this._g3dProjectId}/assembly/${assemblyId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ assembly_name: name, parts, notes, part_count: parts.length })
             });
             const data = await res.json();
             if (data.success) {
-                this.showToast('装配体信息已保存', 'success');
-                this._renderG3DAssembly(data.assembly);
+                this.showToast('装配体已更新', 'success');
+                this._renderG3DAssembly(data.assemblies);
             } else {
                 this.showToast(data.message || '保存失败', 'error');
             }
         } catch (e) {
             this.showToast('保存失败', 'error');
+        }
+    }
+
+    async _g3dDeleteAssembly(assemblyId) {
+        if (!confirm('确定要删除这个装配体吗？')) return;
+        try {
+            const res = await fetch(`/api/g3d/projects/${this._g3dProjectId}/assembly/${assemblyId}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (data.success) {
+                this.showToast('装配体已删除', 'success');
+                this._renderG3DAssembly(data.assemblies);
+            } else {
+                this.showToast(data.message || '删除失败', 'error');
+            }
+        } catch (e) {
+            this.showToast('删除失败', 'error');
         }
     }
 

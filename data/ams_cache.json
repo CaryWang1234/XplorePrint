@@ -2,8 +2,8 @@
   "printer_1_0442": [
     {
       "ams_id": 0,
-      "humidity": 2,
-      "temperature": 35.9,
+      "humidity": 3,
+      "temperature": 39.5,
       "trays": [
         {
           "tray_id": 0,
@@ -12,7 +12,7 @@
           "nozzle_temp_min": "220",
           "nozzle_temp_max": "250",
           "tray_id_name": "A10-K0",
-          "remaining": 53
+          "remaining": 60
         },
         {
           "tray_id": 1,
@@ -21,7 +21,7 @@
           "nozzle_temp_min": "190",
           "nozzle_temp_max": "230",
           "tray_id_name": "A00-B8",
-          "remaining": 87
+          "remaining": 88
         },
         {
           "tray_id": 2,

@@ -100,7 +100,7 @@ class G3DManager:
                 self._update_project_stats(p)
                 commits = self._load_commits(project_id)
                 files = self._get_latest_files(project_id)
-                assembly = self._get_assembly_info(project_id)
+                assemblies = self._get_assemblies(project_id)
                 return {
                     "id": p.id, "name": p.name, "description": p.description,
                     "created_at": p.created_at, "updated_at": p.updated_at,
@@ -111,7 +111,7 @@ class G3DManager:
                     "readme": getattr(p, "readme", ""),
                     "commits": commits,
                     "files": files,
-                    "assembly": assembly,
+                    "assemblies": assemblies,
                 }
         return None
 
@@ -362,36 +362,81 @@ class G3DManager:
                 return {"success": True, "message": "标签已更新"}
         return {"success": False, "message": "项目不存在"}
 
-    def _get_assembly_info(self, project_id: str) -> dict | None:
+    def _get_assemblies(self, project_id: str) -> list:
         assembly_file = os.path.join(self._project_dir(project_id), "assembly.json")
         if os.path.exists(assembly_file):
             try:
                 with open(assembly_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return data
+                if isinstance(data, dict) and "assemblies" in data:
+                    return data["assemblies"]
+                if isinstance(data, dict) and "assembly_name" in data:
+                    data["id"] = str(uuid.uuid4())[:8]
+                    data["created_at"] = data.get("updated_at", datetime.now().isoformat())
+                    return [data]
             except Exception:
                 pass
-        return None
+        return []
 
-    def update_assembly_info(self, project_id: str, data: dict) -> dict:
+    def _save_assemblies(self, project_id: str, assemblies: list):
+        assembly_file = os.path.join(self._project_dir(project_id), "assembly.json")
+        os.makedirs(self._project_dir(project_id), exist_ok=True)
+        with open(assembly_file, "w", encoding="utf-8") as f:
+            json.dump({"assemblies": assemblies}, f, indent=2, ensure_ascii=False)
+
+    def add_assembly(self, project_id: str, data: dict) -> dict:
         project = next((p for p in self._projects if p.id == project_id), None)
         if not project:
             return {"success": False, "message": "项目不存在"}
-        assembly_file = os.path.join(self._project_dir(project_id), "assembly.json")
-        os.makedirs(self._project_dir(project_id), exist_ok=True)
-        existing = {}
-        if os.path.exists(assembly_file):
-            try:
-                with open(assembly_file, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-            except Exception:
-                pass
-        existing.update(data)
-        existing["updated_at"] = datetime.now().isoformat()
-        with open(assembly_file, "w", encoding="utf-8") as f:
-            json.dump(existing, f, indent=2, ensure_ascii=False)
+        assemblies = self._get_assemblies(project_id)
+        new_assembly = {
+            "id": str(uuid.uuid4())[:8],
+            "assembly_name": data.get("assembly_name", "").strip(),
+            "parts": data.get("parts", []),
+            "notes": data.get("notes", ""),
+            "part_count": data.get("part_count", len(data.get("parts", []))),
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat(),
+        }
+        assemblies.append(new_assembly)
+        self._save_assemblies(project_id, assemblies)
         project.updated_at = datetime.now().isoformat()
         self._save_projects()
-        return {"success": True, "assembly": existing, "message": "装配体信息已更新"}
+        return {"success": True, "assembly": new_assembly, "assemblies": assemblies, "message": "装配体已添加"}
+
+    def update_assembly(self, project_id: str, assembly_id: str, data: dict) -> dict:
+        project = next((p for p in self._projects if p.id == project_id), None)
+        if not project:
+            return {"success": False, "message": "项目不存在"}
+        assemblies = self._get_assemblies(project_id)
+        for a in assemblies:
+            if a["id"] == assembly_id:
+                a["assembly_name"] = data.get("assembly_name", a["assembly_name"]).strip()
+                a["parts"] = data.get("parts", a["parts"])
+                a["notes"] = data.get("notes", a.get("notes", ""))
+                a["part_count"] = data.get("part_count", len(a["parts"]))
+                a["updated_at"] = datetime.now().isoformat()
+                self._save_assemblies(project_id, assemblies)
+                project.updated_at = datetime.now().isoformat()
+                self._save_projects()
+                return {"success": True, "assembly": a, "assemblies": assemblies, "message": "装配体已更新"}
+        return {"success": False, "message": "装配体不存在"}
+
+    def delete_assembly(self, project_id: str, assembly_id: str) -> dict:
+        project = next((p for p in self._projects if p.id == project_id), None)
+        if not project:
+            return {"success": False, "message": "项目不存在"}
+        assemblies = self._get_assemblies(project_id)
+        before = len(assemblies)
+        assemblies = [a for a in assemblies if a["id"] != assembly_id]
+        if len(assemblies) == before:
+            return {"success": False, "message": "装配体不存在"}
+        self._save_assemblies(project_id, assemblies)
+        project.updated_at = datetime.now().isoformat()
+        self._save_projects()
+        return {"success": True, "assemblies": assemblies, "message": "装配体已删除"}
 
 
 g3d_manager = G3DManager()
